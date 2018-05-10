@@ -1,0 +1,13 @@
+[Unit]
+Description=D-STAR Repeater Daemon
+After=network.target
+
+[Service]
+Environment="WIRINGPI_GPIOMEM=1"
+User=opendv
+ExecStart=/usr/sbin/dstarrepeaterd %i
+Restart=on-abort
+
+[Install]
+WantedBy=multi-user.target
+DefaultInstance=1
