@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2011,2012,2013 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2011,2012,2013,2018 by Jonathan Naylor G4KLX
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -76,7 +76,7 @@ private:
 	CDStarRepeaterConfig*       m_config;
 	wxSingleInstanceChecker*    m_checker;
 	wxLogChain*                 m_logChain;
-	wxString					m_commandLine[6];
+	wxString                    m_commandLine[6];
 
 	void createThread();
 
@@ -85,6 +85,6 @@ private:
 	wxDECLARE_EVENT_TABLE();
 };
 
-DECLARE_APP(CDStarRepeaterApp)
+wxDECLARE_APP(CDStarRepeaterApp);
 
 #endif

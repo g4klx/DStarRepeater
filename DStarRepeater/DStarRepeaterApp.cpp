@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2011-2015 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2011-2015,2018 by Jonathan Naylor G4KLX
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -52,7 +52,7 @@
 #include "Version.h"
 #include "Logger.h"
 
-IMPLEMENT_APP(CDStarRepeaterApp)
+wxIMPLEMENT_APP(CDStarRepeaterApp);
 
 wxDEFINE_EVENT(wxEVT_THREAD_COMMAND, wxThreadEvent);
 
@@ -73,10 +73,10 @@ const wxString LOG_BASE_NAME   =	"dstarrepeaterd";
 #endif
 
 CDStarRepeaterApp::CDStarRepeaterApp() :
+wxApp(),
 #if (wxUSE_GUI == 1)
 m_frame(NULL),
 #endif
-wxApp(),
 m_name(),
 m_nolog(false),
 m_gui(false),

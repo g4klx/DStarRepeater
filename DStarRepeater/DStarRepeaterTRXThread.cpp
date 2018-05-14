@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2011-2016 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2011-2016,2018 by Jonathan Naylor G4KLX
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -442,17 +442,17 @@ void CDStarRepeaterTRXThread::setControl(bool enabled,
 	m_controlCommand	= command;
 	m_controlOutput		= outputs;
 
-	for(int i = 0; i < m_controlCommand.GetCount(); ++i) {
+	for (size_t i = 0; i < m_controlCommand.GetCount(); ++i) {
 		m_controlCommand[i].Append(' ', LONG_CALLSIGN_LENGTH);
 		m_controlCommand[i].Truncate(LONG_CALLSIGN_LENGTH);
 	}
 
-	for(int i = 0; i < m_controlStatus.GetCount(); ++i) {
+	for (size_t i = 0; i < m_controlStatus.GetCount(); ++i) {
 		m_controlStatus[i].Append(' ', LONG_CALLSIGN_LENGTH);
 		m_controlStatus[i].Truncate(LONG_CALLSIGN_LENGTH);
 	}
 
-	for(int i = 0; i < m_controlOutput.GetCount(); ++i) {
+	for (size_t i = 0; i < m_controlOutput.GetCount(); ++i) {
 		m_controlOutput[i].Append(' ', LONG_CALLSIGN_LENGTH);
 		m_controlOutput[i].Truncate(LONG_CALLSIGN_LENGTH);
 	}
@@ -1785,8 +1785,8 @@ bool CDStarRepeaterTRXThread::checkControl(const CHeaderData& header)
 	if (!m_controlRPT1.IsSameAs(header.getRptCall1()) || !m_controlRPT2.IsSameAs(header.getRptCall2()))
 		return false;
 
-	for(int i = 0; i < m_controlCommand.GetCount(); ++i) {
-		if(m_controlCommand[i].IsSameAs(header.getYourCall())) {
+	for (size_t i = 0; i < m_controlCommand.GetCount(); ++i) {
+		if (m_controlCommand[i].IsSameAs(header.getYourCall())) {
 			wxThreadEvent evt(wxEVT_THREAD, wxEVT_THREAD_COMMAND);
 			evt.SetInt(i);
 			wxTheApp->QueueEvent(evt.Clone());
@@ -1795,8 +1795,8 @@ bool CDStarRepeaterTRXThread::checkControl(const CHeaderData& header)
 		}
 	}
 
-	for(int i = 0; i < m_controlStatus.GetCount(); ++i) {
-		if(m_controlStatus[i].IsSameAs(header.getYourCall())) {
+	for (size_t i = 0; i < m_controlStatus.GetCount(); ++i) {
+		if (m_controlStatus[i].IsSameAs(header.getYourCall())) {
 			wxLogMessage(wxT("Status %d requested by %s/%s"),
 				i, header.getMyCall1().c_str(),
 				header.getMyCall2().c_str());
@@ -1805,8 +1805,8 @@ bool CDStarRepeaterTRXThread::checkControl(const CHeaderData& header)
 		}
 	}
 
-	for(int i = 0; i < m_controlOutput.GetCount(); ++i) {
-		if(m_controlOutput[i].IsSameAs(header.getYourCall())) {
+	for (size_t i = 0; i < m_controlOutput.GetCount(); ++i) {
+		if (m_controlOutput[i].IsSameAs(header.getYourCall())) {
 			wxLogMessage(wxT("Output %d requested by %s/%s"), i,
 				header.getMyCall1().c_str(),
 				header.getMyCall2().c_str());
