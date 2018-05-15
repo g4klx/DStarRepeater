@@ -9,6 +9,9 @@ dstarrepeater:	$(OBJECTS)
 %.o: %.cpp
 		$(CXX) $(CFLAGS) -I../Common -c -o $@ $<
 
+install:
+		install -g bin -o root -m 0775 dstarrepeater $(BINDIR)
+
 clean:
 		$(RM) dstarrepeater *.o *.d *.bak *~
 

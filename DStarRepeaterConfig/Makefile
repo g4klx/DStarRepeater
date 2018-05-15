@@ -13,6 +13,9 @@ dstarrepeaterconfig:	$(OBJECTS)
 %.o: %.cpp
 		$(CXX) $(CFLAGS) -I../GUICommon -I../Common -c -o $@ $<
 
+install:
+		install -g bin -o root -m 0775 dstarrepeaterconfig $(BINDIR)
+
 clean:
 		$(RM) dstarrepeaterconfig *.o *.d *.bak *~
 
