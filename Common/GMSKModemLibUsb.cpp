@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2010-2014 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2010-2014,2018 by Jonathan Naylor G4KLX
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -74,11 +74,11 @@ static void libUsbLogError(int ret, const char *message) {
 
 CGMSKModemLibUsb::CGMSKModemLibUsb(unsigned int address) :
 m_address(address),
+#if !defined(WIN32)
+m_context(NULL),
+#endif
 m_dev(NULL),
 m_brokenSpace(false)
-#if !defined(WIN32)
-,m_context(NULL)
-#endif
 {
 
 #if defined(WIN32)

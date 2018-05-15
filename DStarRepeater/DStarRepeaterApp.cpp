@@ -470,7 +470,7 @@ void CDStarRepeaterApp::createThread()
 				modem = new CDVMegaController(port, wxEmptyString, txDelay, rxFrequency, txFrequency, power);
 				break;
 			default:
-				wxLogError("Unknown DVMEGA variant - %d"), int(variant);
+				wxLogError("Unknown DVMEGA variant - %d", int(variant));
 				break;
 		}
 	} else if (modemType.IsSameAs("GMSK Modem")) {
