@@ -9,10 +9,10 @@ export GUILIBS := $(shell wx-config --libs adv,core,base) -lasound
 export LIBS    := $(shell wx-config --libs base) -lasound -lusb-1.0
 export LDFLAGS := 
 
-all:	DStarRepeater/dstarrepeater DStarRepeaterConfig/dstarrepeaterconfig
+all:	DStarRepeater/dstarrepeaterd DStarRepeaterConfig/dstarrepeaterconfig
 
-DStarRepeater/dstarrepeater:	Common/Common.a
-	make -C DStarRepeater dstarrepeater
+DStarRepeater/dstarrepeaterd:	Common/Common.a
+	make -C DStarRepeater dstarrepeaterd
 
 DStarRepeaterConfig/dstarrepeaterconfig:	GUICommon/GUICommon.a Common/Common.a
 	make -C DStarRepeaterConfig

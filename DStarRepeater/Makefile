@@ -1,9 +1,9 @@
 OBJECTS = DStarRepeaterApp.o DStarRepeaterLogger.o DStarRepeaterRXThread.o DStarRepeaterStatusData.o \
 	  DStarRepeaterThread.o DStarRepeaterTRXThread.o DStarRepeaterTXRXThread.o DStarRepeaterTXThread.o
 
-all:		dstarrepeater
+all:		dstarrepeaterd
 
-dstarrepeater:	$(OBJECTS)
+dstarrepeaterd:	$(OBJECTS)
 		$(CXX) $(OBJECTS) ../Common/Common.a $(LDFLAGS) $(LIBS) -o dstarrepeaterd
 
 %.o: %.cpp
