@@ -8,7 +8,7 @@ OBJECTS = DStarRepeaterConfigActiveHangSet.o DStarRepeaterConfigAnnouncementSet.
 all:		dstarrepeaterconfig
 
 dstarrepeaterconfig:	$(OBJECTS)
-		$(CXX) $(OBJECTS) ../GUICommon/GUICommon.a ../Common/Common.a $(LDFLAGS) $(LIBS) -o dstarrepeaterconfig
+		$(CXX) $(OBJECTS) ../GUICommon/GUICommon.a ../Common/Common.a $(LDFLAGS) $(GUILIBS) -o dstarrepeaterconfig
 
 %.o: %.cpp
 		$(CXX) $(CFLAGS) -I../GUICommon -I../Common -c -o $@ $<

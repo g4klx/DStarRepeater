@@ -5,7 +5,8 @@ export BINDIR  := "/usr/bin"
 
 export CXX     := $(shell wx-config --cxx)
 export CFLAGS  := -O2 -Wall $(shell wx-config --cxxflags) -DLOG_DIR='$(LOGDIR)' -DCONF_DIR='$(CONFDIR)' -DDATA_DIR='$(DATADIR)'
-export LIBS    := $(shell wx-config --libs adv,core) -lasound -lusb-1.0
+export GUILIBS := $(shell wx-config --libs adv,core,base) -lasound
+export LIBS    := $(shell wx-config --libs base) -lasound -lusb-1.0
 export LDFLAGS := 
 
 all:	DStarRepeater/dstarrepeater DStarRepeaterConfig/dstarrepeaterconfig

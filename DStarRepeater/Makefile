@@ -1,17 +1,17 @@
-OBJECTS = DStarRepeaterApp.o DStarRepeaterFrame.o DStarRepeaterLogger.o DStarRepeaterRXThread.o DStarRepeaterStatusData.o \
+OBJECTS = DStarRepeaterApp.o DStarRepeaterLogger.o DStarRepeaterRXThread.o DStarRepeaterStatusData.o \
 	  DStarRepeaterThread.o DStarRepeaterTRXThread.o DStarRepeaterTXRXThread.o DStarRepeaterTXThread.o
 
 all:		dstarrepeater
 
 dstarrepeater:	$(OBJECTS)
-		$(CXX) $(OBJECTS) ../Common/Common.a $(LDFLAGS) $(LIBS) -o dstarrepeater
+		$(CXX) $(OBJECTS) ../Common/Common.a $(LDFLAGS) $(LIBS) -o dstarrepeaterd
 
 %.o: %.cpp
-		$(CXX) $(CFLAGS) -I../Common -c -o $@ $<
+		$(CXX) -DwxUSE_GUI=0 $(CFLAGS) -I../Common -c -o $@ $<
 
 install:
-		install -g bin -o root -m 0775 dstarrepeater $(BINDIR)
+		install -g bin -o root -m 0775 dstarrepeaterd $(BINDIR)
 
 clean:
-		$(RM) dstarrepeater *.o *.d *.bak *~
+		$(RM) dstarrepeaterd *.o *.d *.bak *~
 

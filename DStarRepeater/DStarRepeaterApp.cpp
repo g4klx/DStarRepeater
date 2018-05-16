@@ -305,8 +305,7 @@ void CDStarRepeaterApp::setPosition(int x, int y)
 
 void CDStarRepeaterApp::OnRemoteCmd(wxThreadEvent& event)
 {
-	wxLogMessage("Request to execute command %s (%d)",
-		m_commandLine[event.GetInt()], event.GetInt());
+	wxLogMessage("Request to execute command %s (%d)", m_commandLine[event.GetInt()], event.GetInt());
 	// XXX sanity check the command line here.
 	wxShell(m_commandLine[event.GetInt()]);
 }
@@ -646,7 +645,7 @@ void CDStarRepeaterApp::createThread()
 #if defined(__WINDOWS__)
 	wxFileName blFilename(wxFileName::GetHomeDir(), PRIMARY_BLACKLIST_FILE_NAME);
 #else
-		wxFileName blFilename(CONF_DIR, PRIMARY_BLACKLIST_FILE_NAME);
+	wxFileName blFilename(CONF_DIR, PRIMARY_BLACKLIST_FILE_NAME);
 #endif
 	exists = blFilename.FileExists();
 
