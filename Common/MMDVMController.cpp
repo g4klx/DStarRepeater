@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2011-2016 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2011-2016,2018 by Jonathan Naylor G4KLX
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -472,7 +472,7 @@ bool CMMDVMController::setConfig()
 
 	buffer[0U] = MMDVM_FRAME_START;
 
-	buffer[1U] = 19U;
+	buffer[1U] = 20U;
 
 	buffer[2U] = MMDVM_SET_CONFIG;
 
@@ -509,10 +509,12 @@ bool CMMDVMController::setConfig()
 
 	buffer[18U] = (m_txLevel * 255U) / 100U;
 
-	// CUtils::dump(wxT("Written"), buffer, 19U);
+	buffer[19U] = 0U;
 
-	int ret = m_serial.write(buffer, 19U);
-	if (ret != 19U)
+	// CUtils::dump(wxT("Written"), buffer, 20U);
+
+	int ret = m_serial.write(buffer, 20U);
+	if (ret != 20U)
 		return false;
 
 	unsigned int count = 0U;
