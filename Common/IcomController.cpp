@@ -98,8 +98,7 @@ void* CIcomController::Entry()
 			return NULL;
 
 		case RTI_HEADER: {
-				CUtils::dump(wxT("RT_HEADER"), m_buffer, length);
-
+				// CUtils::dump(wxT("RT_HEADER"), m_buffer, length);
 				wxMutexLocker locker(m_mutex);
 
 				unsigned char data[2U];
@@ -114,8 +113,7 @@ void* CIcomController::Entry()
 			break;
 
 		case RTI_DATA: {
-				CUtils::dump(wxT("RT_DATA"), m_buffer, length);
-
+				// CUtils::dump(wxT("RT_DATA"), m_buffer, length);
 				wxMutexLocker locker(m_mutex);
 
 				unsigned char data[2U];
@@ -126,6 +124,19 @@ void* CIcomController::Entry()
 				m_rxData.addData(m_buffer + 5U, DV_FRAME_LENGTH_BYTES);
 
 				m_rx = true;
+			}
+			break;
+
+		case RTI_EOT: {
+				// wxLogMessage(wxT("RT_EOT"));
+				wxMutexLocker locker(m_mutex);
+
+				unsigned char data[2U];
+				data[0U] = DSMTT_EOT;
+				data[1U] = 0U;
+				m_rxData.addData(data, 2U);
+
+				m_rx = false;
 			}
 			break;
 
@@ -689,7 +700,10 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 		case 45U:
 			return RTI_HEADER;
 		case 17U:
-			return RTI_DATA;
+			if ((buffer[4U] & 0x40U) == 0x40U)
+				return RTI_EOT;
+			else
+				return RTI_DATA;
 		default:
 			return RTI_UNKNOWN;
 	}
