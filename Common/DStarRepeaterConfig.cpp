@@ -149,6 +149,8 @@ const wxString  KEY_SPLIT_TXNAME       = wxT("splitTXName");
 const wxString  KEY_SPLIT_RXNAME       = wxT("splitRXName");
 const wxString  KEY_SPLIT_TIMEOUT      = wxT("splitTimeout");
 
+const wxString  KEY_ICOM_PORT          = wxT("icomPort");
+
 
 const wxString        DEFAULT_CALLSIGN           = wxT("GB3IN  C");
 const wxString        DEFAULT_GATEWAY            = wxEmptyString;
@@ -260,6 +262,8 @@ const unsigned int    DEFAULT_SPLIT_LOCALPORT    = 0U;
 const wxString        DEFAULT_SPLIT_TXNAME       = wxEmptyString;
 const wxString        DEFAULT_SPLIT_RXNAME       = wxEmptyString;
 const unsigned int    DEFAULT_SPLIT_TIMEOUT      = 0U;
+
+const wxString        DEFAULT_ICOM_PORT          = wxEmptyString;
 
 #if defined(__WINDOWS__)
 
@@ -383,7 +387,8 @@ m_splitLocalAddress(DEFAULT_SPLIT_LOCALADDRESS),
 m_splitLocalPort(DEFAULT_SPLIT_LOCALPORT),
 m_splitTXNames(),
 m_splitRXNames(),
-m_splitTimeout(DEFAULT_SPLIT_TIMEOUT)
+m_splitTimeout(DEFAULT_SPLIT_TIMEOUT),
+m_icomPort(DEFAULT_ICOM_PORT)
 {
 	wxASSERT(config != NULL);
 	wxASSERT(!dir.IsEmpty());
@@ -689,6 +694,8 @@ m_splitTimeout(DEFAULT_SPLIT_TIMEOUT)
 
 	m_config->Read(m_name + KEY_SPLIT_TIMEOUT, &temp, long(DEFAULT_SPLIT_TIMEOUT));
 	m_splitTimeout = (unsigned int)temp;
+
+	m_config->Read(m_name + KEY_ICOM_PORT, &m_icomPort, DEFAULT_ICOM_PORT);
 }
 
 CDStarRepeaterConfig::~CDStarRepeaterConfig()
@@ -816,7 +823,8 @@ m_splitLocalAddress(DEFAULT_SPLIT_LOCALADDRESS),
 m_splitLocalPort(DEFAULT_SPLIT_LOCALPORT),
 m_splitTXNames(),
 m_splitRXNames(),
-m_splitTimeout(DEFAULT_SPLIT_TIMEOUT)
+m_splitTimeout(DEFAULT_SPLIT_TIMEOUT),
+m_icomPort(DEFAULT_ICOM_PORT)
 {
 	wxASSERT(!dir.IsEmpty());
 
@@ -1148,6 +1156,8 @@ m_splitTimeout(DEFAULT_SPLIT_TIMEOUT)
 		} else if (key.IsSameAs(KEY_SOUNDCARD_TXTAIL)) {
 			val.ToULong(&temp2);
 			m_soundCardTXTail = (unsigned int)temp2;
+		} else if (key.IsSameAs(KEY_ICOM_PORT)) {
+			m_icomPort = val;
 		} else if (key.IsSameAs(KEY_SPLIT_LOCALADDRESS)) {
 			m_splitLocalAddress = val;
 		} else if (key.IsSameAs(KEY_SPLIT_LOCALPORT)) {
@@ -1588,6 +1598,16 @@ void CDStarRepeaterConfig::setSplit(const wxString& localAddress, unsigned int l
 	m_splitTimeout      = timeout;
 }
 
+void CDStarRepeaterConfig::getIcom(wxString& port) const
+{
+	port = m_icomPort;
+}
+
+void CDStarRepeaterConfig::setIcom(const wxString& port)
+{
+	m_icomPort = port;
+}
+
 bool CDStarRepeaterConfig::write()
 {
 #if defined(__WINDOWS__)
@@ -1711,6 +1731,8 @@ bool CDStarRepeaterConfig::write()
 	m_config->Write(m_name + KEY_SOUNDCARD_TXLEVEL,  double(m_soundCardTXLevel));
 	m_config->Write(m_name + KEY_SOUNDCARD_TXDELAY,  long(m_soundCardTXDelay));
 	m_config->Write(m_name + KEY_SOUNDCARD_TXTAIL,   long(m_soundCardTXTail));
+
+	m_config->Write(m_name + KEY_ICOM_PORT,          m_icomPort);
 
 	m_config->Write(m_name + KEY_SPLIT_LOCALADDRESS, m_splitLocalAddress);
 	m_config->Write(m_name + KEY_SPLIT_LOCALPORT,    long(m_splitLocalPort));
@@ -1875,8 +1897,10 @@ bool CDStarRepeaterConfig::write()
 	buffer.Printf(wxT("%s=%u"),   KEY_SOUNDCARD_TXDELAY.c_str(),  m_soundCardTXDelay); file.AddLine(buffer);
 	buffer.Printf(wxT("%s=%u"),   KEY_SOUNDCARD_TXTAIL.c_str(),   m_soundCardTXTail);  file.AddLine(buffer);
 
-	buffer.Printf(wxT("%s=%s"), KEY_SPLIT_LOCALADDRESS.c_str(), m_splitLocalAddress.c_str()); file.AddLine(buffer);
-	buffer.Printf(wxT("%s=%u"), KEY_SPLIT_LOCALPORT.c_str(),    m_splitLocalPort); file.AddLine(buffer);
+	buffer.Printf(wxT("%s=%s"),   KEY_ICOM_PORT.c_str(),          m_icomPort.c_str()); file.AddLine(buffer);
+
+	buffer.Printf(wxT("%s=%s"),   KEY_SPLIT_LOCALADDRESS.c_str(), m_splitLocalAddress.c_str()); file.AddLine(buffer);
+	buffer.Printf(wxT("%s=%u"),   KEY_SPLIT_LOCALPORT.c_str(),    m_splitLocalPort);            file.AddLine(buffer);
 
 	for (unsigned int i = 0U; i < m_splitTXNames.GetCount(); i++) {
 		wxString name;

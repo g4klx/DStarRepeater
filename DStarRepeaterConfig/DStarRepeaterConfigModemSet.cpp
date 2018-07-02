@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2011-2015 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2011-2015,2018 by Jonathan Naylor G4KLX
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@
 #include "DStarRepeaterConfigMMDVMSet.h"
 #include "DStarRepeaterConfigGMSKSet.h"
 #include "DStarRepeaterConfigDVAPSet.h"
+#include "DStarRepeaterConfigIcomSet.h"
 #include "DStarRepeaterConfigSplitSet.h"
 
 enum {
@@ -36,7 +37,8 @@ BEGIN_EVENT_TABLE(CDStarRepeaterConfigModemSet, wxPanel)
 END_EVENT_TABLE()
 
 const unsigned int BORDER_SIZE   = 5U;
-const unsigned int CONTROL_WIDTH = 130U;
+const unsigned int CONTROL_WIDTH1 = 210U;
+const unsigned int CONTROL_WIDTH2 = 130U;
 
 CDStarRepeaterConfigModemSet::CDStarRepeaterConfigModemSet(wxWindow* parent, int id, const wxString& title, CDStarRepeaterConfig* config, const wxString& type) :
 wxPanel(parent, id),
@@ -51,7 +53,7 @@ m_type(NULL)
 	wxStaticText* typeLabel = new wxStaticText(this, -1, _("Type"));
 	sizer->Add(typeLabel, 0, wxALL | wxALIGN_LEFT, BORDER_SIZE);
 
-	m_type = new wxChoice(this, -1, wxDefaultPosition, wxSize(CONTROL_WIDTH, -1));
+	m_type = new wxChoice(this, -1, wxDefaultPosition, wxSize(CONTROL_WIDTH1, -1));
 	m_type->Append(wxT("DVAP"));
 	m_type->Append(wxT("DVMEGA"));
 	m_type->Append(wxT("DV-RPTR V1"));
@@ -61,12 +63,13 @@ m_type(NULL)
 	m_type->Append(wxT("MMDVM"));
 	m_type->Append(wxT("Sound Card"));
 	m_type->Append(wxT("Split"));
+	m_type->Append(wxT("Icom Access Point/Terminal Mode"));
 	sizer->Add(m_type, 0, wxALL | wxALIGN_LEFT, BORDER_SIZE);
 
 	wxStaticText* dummy = new wxStaticText(this, -1, wxEmptyString);
 	sizer->Add(dummy, 0, wxALL, BORDER_SIZE);
 
-	wxButton* configure = new wxButton(this, Button_Configure, _("Configure..."), wxDefaultPosition, wxSize(CONTROL_WIDTH, -1));
+	wxButton* configure = new wxButton(this, Button_Configure, _("Configure..."), wxDefaultPosition, wxSize(CONTROL_WIDTH2, -1));
 	sizer->Add(configure, 0, wxALL, BORDER_SIZE);
 
 	if (type.IsEmpty()) {
@@ -266,6 +269,16 @@ void CDStarRepeaterConfigModemSet::onConfigure(wxCommandEvent& event)
 				receiverNames    = modem.getReceiverNames();
 				timeout          = modem.getTimeout();
 				m_config->setSplit(localAddress, localPort, transmitterNames, receiverNames, timeout);
+			}
+		}
+	} else if (type.IsSameAs(wxT("Icom Access Point/Terminal Mode"))) {
+		wxString port;
+		m_config->getIcom(port);
+		CDStarRepeaterConfigIcomSet modem(this, -1, port);
+		if (modem.ShowModal() == wxID_OK) {
+			if (modem.Validate()) {
+				port = modem.getPort();
+				m_config->setIcom(port);
 			}
 		}
 	}

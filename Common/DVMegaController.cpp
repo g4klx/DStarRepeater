@@ -21,6 +21,7 @@
 #include "CCITTChecksum.h"
 #include "DStarDefines.h"
 #include "Timer.h"
+#include "Utils.h"
 
 #if defined(__WINDOWS__)
 #include <setupapi.h>
@@ -186,7 +187,7 @@ void* CDVMegaController::Entry()
 				break;
 
 			case RTM_HEADER:
-				// CUtils::dump(wxT("RT_HEADER"), m_buffer, length);
+				CUtils::dump(wxT("RT_HEADER"), m_buffer, length);
 				if (length == 7U) {
 					if (m_buffer[4U] == DVRPTR_NAK)
 						wxLogWarning(wxT("Received a header NAK from the DVMEGA"));
@@ -212,7 +213,7 @@ void* CDVMegaController::Entry()
 				break;
 
 			case RTM_DATA:
-				// CUtils::dump(wxT("RT_DATA"), m_buffer, length);
+				CUtils::dump(wxT("RT_DATA"), m_buffer, length);
 				if (length == 7U) {
 					if (m_buffer[4U] == DVRPTR_NAK)
 						wxLogWarning(wxT("Received a data NAK from the DVMEGA"));
@@ -231,7 +232,7 @@ void* CDVMegaController::Entry()
 				break;
 
 			case RTM_EOT: {
-					// wxLogMessage(wxT("RT_EOT"));
+					wxLogMessage(wxT("RT_EOT"));
 					wxMutexLocker locker(m_mutex);
 
 					unsigned char data[2U];
@@ -244,7 +245,7 @@ void* CDVMegaController::Entry()
 				break;
 
 			case RTM_RXLOST: {
-					// wxLogMessage(wxT("RT_LOST"));
+					wxLogMessage(wxT("RT_LOST"));
 					wxMutexLocker locker(m_mutex);
 
 					unsigned char data[2U];

@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2011-2015 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2011-2015,2018 by Jonathan Naylor G4KLX
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -94,6 +94,9 @@ public:
 
 	void getSplit(wxString& localAddress, unsigned int& localPort, wxArrayString& transmitterNames, wxArrayString& receiverNames, unsigned int& timeout) const;
 	void setSplit(const wxString& localAddress, unsigned int localPort, const wxArrayString& transmitterNames, const wxArrayString& receiverNames, unsigned int timeout);
+
+	void getIcom(wxString& port) const;
+	void setIcom(const wxString& port);
 
 	bool write();
 
@@ -238,6 +241,9 @@ private:
 	wxArrayString m_splitTXNames;
 	wxArrayString m_splitRXNames;
 	unsigned int  m_splitTimeout;
+
+	// Icom Access Point/Terminal Mode
+	wxString      m_icomPort;
 };
 
 #endif

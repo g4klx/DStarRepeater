@@ -181,6 +181,7 @@
     <ClCompile Include="DStarRepeaterConfigDVRPTR3Set.cpp" />
     <ClCompile Include="DStarRepeaterConfigFrame.cpp" />
     <ClCompile Include="DStarRepeaterConfigGMSKSet.cpp" />
+    <ClCompile Include="DStarRepeaterConfigIcomSet.cpp" />
     <ClCompile Include="DStarRepeaterConfigMMDVMSet.cpp" />
     <ClCompile Include="DStarRepeaterConfigModemSet.cpp" />
     <ClCompile Include="DStarRepeaterConfigNetworkSet.cpp" />
@@ -205,6 +206,7 @@
     <ClInclude Include="DStarRepeaterConfigDVRPTR3Set.h" />
     <ClInclude Include="DStarRepeaterConfigFrame.h" />
     <ClInclude Include="DStarRepeaterConfigGMSKSet.h" />
+    <ClInclude Include="DStarRepeaterConfigIcomSet.h" />
     <ClInclude Include="DStarRepeaterConfigMMDVMSet.h" />
     <ClInclude Include="DStarRepeaterConfigModemSet.h" />
     <ClInclude Include="DStarRepeaterConfigNetworkSet.h" />

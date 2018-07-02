@@ -74,6 +74,9 @@
     <ClCompile Include="DStarRepeaterConfigTimesSet.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DStarRepeaterConfigIcomSet.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DStarRepeaterConfigActiveHangSet.h">
@@ -140,6 +143,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DStarRepeaterConfigTimesSet.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DStarRepeaterConfigIcomSet.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
