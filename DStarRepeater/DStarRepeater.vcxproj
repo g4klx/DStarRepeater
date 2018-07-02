@@ -172,7 +172,7 @@
   <ItemGroup>
     <ClCompile Include="DStarRepeaterApp.cpp" />
     <ClCompile Include="DStarRepeaterFrame.cpp" />
-    <ClCompile Include="DStarRepeaterLogger.cpp" />
+    <ClCompile Include="DStarRepeaterLogRedirect.cpp" />
     <ClCompile Include="DStarRepeaterRXThread.cpp" />
     <ClCompile Include="DStarRepeaterStatusData.cpp" />
     <ClCompile Include="DStarRepeaterThread.cpp" />
@@ -184,7 +184,7 @@
     <ClInclude Include="DStarRepeaterApp.h" />
     <ClInclude Include="DStarRepeaterDefs.h" />
     <ClInclude Include="DStarRepeaterFrame.h" />
-    <ClInclude Include="DStarRepeaterLogger.h" />
+    <ClInclude Include="DStarRepeaterLogRedirect.h" />
     <ClInclude Include="DStarRepeaterRXThread.h" />
     <ClInclude Include="DStarRepeaterStatusData.h" />
     <ClInclude Include="DStarRepeaterThread.h" />

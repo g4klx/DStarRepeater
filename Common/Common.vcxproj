@@ -180,6 +180,7 @@
     <ClCompile Include="Golay.cpp" />
     <ClCompile Include="HardwareController.cpp" />
     <ClCompile Include="HeaderData.cpp" />
+    <ClCompile Include="IcomController.cpp" />
     <ClCompile Include="K8055Controller.cpp" />
     <ClCompile Include="LogEvent.cpp" />
     <ClCompile Include="Logger.cpp" />
@@ -234,6 +235,7 @@
     <ClInclude Include="Golay.h" />
     <ClInclude Include="HardwareController.h" />
     <ClInclude Include="HeaderData.h" />
+    <ClInclude Include="IcomController.h" />
     <ClInclude Include="K8055Controller.h" />
     <ClInclude Include="LogEvent.h" />
     <ClInclude Include="Logger.h" />

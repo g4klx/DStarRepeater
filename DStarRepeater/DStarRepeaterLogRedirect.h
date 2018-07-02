@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2002,2003,2009-2011 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2002,2003,2009-2011,2018 by Jonathan Naylor G4KLX
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -16,18 +16,18 @@
  *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-#ifndef	DStarRepeaterLogger_H
-#define	DStarRepeaterLogger_H
+#ifndef	DStarRepeaterLogRedirect_H
+#define	DStarRepeaterLogRedirect_H
 
 #include <wx/wx.h>
+#include <wx/log.h>
 
-class CDStarRepeaterLogger : public wxLog {
+class CDStarRepeaterLogRedirect : public wxLog {
 public:
-	CDStarRepeaterLogger();
-	virtual ~CDStarRepeaterLogger();
+	CDStarRepeaterLogRedirect();
+	virtual ~CDStarRepeaterLogRedirect();
 
-	virtual void DoLog(wxLogLevel level, const wxChar* msg, time_t timestamp);
-	virtual void DoLogString(const wxChar* msg, time_t timestamp);
+	virtual void DoLogRecord(wxLogLevel level, const wxString& msg, const wxLogRecordInfo& info);
 
 private:
 };

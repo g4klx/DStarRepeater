@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2002,2003,2009-2012 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2002,2003,2009-2013,2018 by Jonathan Naylor G4KLX
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -16,22 +16,20 @@
  *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-#include "DStarRepeaterLogger.h"
+#include "DStarRepeaterLogRedirect.h"
 #include "DStarRepeaterApp.h"
 
-CDStarRepeaterLogger::CDStarRepeaterLogger() :
+CDStarRepeaterLogRedirect::CDStarRepeaterLogRedirect() :
 wxLog()
 {
 }
 
-CDStarRepeaterLogger::~CDStarRepeaterLogger()
+CDStarRepeaterLogRedirect::~CDStarRepeaterLogRedirect()
 {
 }
 
-void CDStarRepeaterLogger::DoLog(wxLogLevel level, const wxChar* msg, time_t timestamp)
+void CDStarRepeaterLogRedirect::DoLogRecord(wxLogLevel level, const wxString& msg, const wxLogRecordInfo& info)
 {
-	wxASSERT(msg != NULL);
-
 	wxString letter;
 
 	switch (level) {
@@ -46,20 +44,13 @@ void CDStarRepeaterLogger::DoLog(wxLogLevel level, const wxChar* msg, time_t tim
 		default:               letter = wxT("U"); break;
 	}
 
-	struct tm* tm = ::gmtime(&timestamp);
+	struct tm* tm = ::gmtime(&info.timestamp);
 
 	wxString message;
-	message.Printf(wxT("%s: %04d-%02d-%02d %02d:%02d:%02d: %s\n"), letter.c_str(), tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec, msg);
+	message.Printf(wxT("%s: %04d-%02d-%02d %02d:%02d:%02d: %s\n"), letter.c_str(), tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec, msg.c_str());
 
-	DoLogString(message.c_str(), timestamp);
+	::wxGetApp().showLog(message);
 
 	if (level == wxLOG_FatalError)
 		::abort();
-}
-
-void CDStarRepeaterLogger::DoLogString(const wxChar* msg, time_t timestamp)
-{
-	wxASSERT(msg != NULL);
-
-	::wxGetApp().showLog(msg);
 }

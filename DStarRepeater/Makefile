@@ -1,4 +1,4 @@
-OBJECTS = DStarRepeaterApp.o DStarRepeaterLogger.o DStarRepeaterRXThread.o DStarRepeaterStatusData.o \
+OBJECTS = DStarRepeaterApp.o DStarRepeaterLogRedirect.o DStarRepeaterRXThread.o DStarRepeaterStatusData.o \
 	  DStarRepeaterThread.o DStarRepeaterTRXThread.o DStarRepeaterTXRXThread.o DStarRepeaterTXThread.o
 
 all:		dstarrepeaterd

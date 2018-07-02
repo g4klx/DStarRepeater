@@ -17,9 +17,6 @@
     <ClCompile Include="DStarRepeaterFrame.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="DStarRepeaterLogger.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="DStarRepeaterRXThread.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -38,6 +35,9 @@
     <ClCompile Include="DStarRepeaterTXThread.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DStarRepeaterLogRedirect.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DStarRepeaterApp.h">
@@ -47,9 +47,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DStarRepeaterFrame.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="DStarRepeaterLogger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DStarRepeaterRXThread.h">
@@ -68,6 +65,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DStarRepeaterTXThread.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DStarRepeaterLogRedirect.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

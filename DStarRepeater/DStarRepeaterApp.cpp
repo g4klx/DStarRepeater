@@ -22,13 +22,13 @@
 #include <wx/filename.h>
 #include <wx/event.h>
 
+#include "DStarRepeaterLogRedirect.h"
 #include "DStarRepeaterTXRXThread.h"
 #include "RepeaterProtocolHandler.h"
 #include "DStarRepeaterTRXThread.h"
 #include "DStarRepeaterTXThread.h"
 #include "DStarRepeaterRXThread.h"
 #include "SerialLineController.h"
-#include "DStarRepeaterLogger.h"
 #include "DStarRepeaterThread.h"
 #include "SoundCardController.h"
 #include "DVRPTRV1Controller.h"
@@ -42,6 +42,7 @@
 #include "K8055Controller.h"
 #include "DummyController.h"
 #include "SplitController.h"
+#include "IcomController.h"
 #if defined(GPIO)
 #include "GPIOController.h"
 #include "UDRCController.h"
@@ -127,7 +128,7 @@ bool CDStarRepeaterApp::OnInit()
 		new wxLogNull;
 	}
 
-	m_logChain = new wxLogChain(new CDStarRepeaterLogger);
+	m_logChain = new wxLogChain(new CDStarRepeaterLogRedirect);
 
 	wxString appName;
 	if (!m_name.IsEmpty())
@@ -511,6 +512,11 @@ void CDStarRepeaterApp::createThread()
 				wxLogInfo("\tRX %u name: %s", i + 1U, name.c_str());
 		}
 		modem = new CSplitController(localAddress, localPort, transmitterNames, receiverNames, timeout);
+	} else if (modemType.IsSameAs("Icom Access Point/Terminal Mode")) {
+		wxString port;
+		m_config->getIcom(port);
+		wxLogInfo("Icom, port: %s", port.c_str());
+		modem = new CIcomController(port);
 	} else {
 		wxLogError("Unknown modem type: %s", modemType.c_str());
 	}

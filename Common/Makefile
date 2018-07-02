@@ -2,7 +2,7 @@ OBJECTS = AMBEFEC.o AnnouncementUnit.o ArduinoController.o BeaconUnit.o Callsign
 	  DStarGMSKDemodulator.o DStarGMSKModulator.o DStarRepeaterConfig.o DStarScrambler.o DummyController.o DVAPController.o \
 	  DVMegaController.o DVRPTRV1Controller.o DVRPTRV2Controller.o DVRPTRV3Controller.o DVTOOLFileReader.o DVTOOLFileWriter.o \
 	  ExternalController.o FIRFilter.o GatewayProtocolHandler.o GMSKController.o GMSKModem.o GMSKModemLibUsb.o Golay.o \
-	  HardwareController.o HeaderData.o K8055Controller.o LogEvent.o Logger.o MMDVMController.o Modem.o OutputQueue.o \
+	  HardwareController.o HeaderData.o IcomController.o K8055Controller.o LogEvent.o Logger.o MMDVMController.o Modem.o OutputQueue.o \
 	  RepeaterProtocolHandler.o SerialDataController.o SerialLineController.o SerialPortSelector.o SlowDataDecoder.o SlowDataEncoder.o \
 	  SoundCardController.o SoundCardReaderWriter.o SplitController.o TCPReaderWriter.o Timer.o UDPReaderWriter.o \
 	  URIUSBController.o Utils.o

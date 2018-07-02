@@ -155,6 +155,9 @@
     <ClCompile Include="URIUSBController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="IcomController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AMBEFEC.h">
@@ -320,6 +323,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="URIUSBController.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IcomController.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
