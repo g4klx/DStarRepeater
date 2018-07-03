@@ -32,7 +32,9 @@ enum RESP_TYPE_ICOM {
 	RTI_UNKNOWN,
 	RTI_HEADER,
 	RTI_DATA,
-	RTI_EOT
+	RTI_EOT,
+	RTI_HEADER_ACK,
+	RTI_DATA_ACK
 };
 
 class CIcomController : public CModem {
@@ -59,10 +61,7 @@ private:
 	CRingBuffer<unsigned char> m_txData;
 	unsigned char              m_txCounter;
 	unsigned char              m_pktCounter;
-	bool                       m_rx;
-	unsigned int               m_txSpace;
-	bool                       m_txEnabled;
-	bool                       m_checksum;
+	bool                       m_txSpace;
 
 	RESP_TYPE_ICOM getResponse(unsigned char* buffer, unsigned int& length);
 };
