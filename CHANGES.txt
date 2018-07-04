@@ -1,4 +1,4 @@
-Repeater - 20180510
+Repeater - 20180703
 ===================
 
 20090530
@@ -2086,3 +2086,8 @@ Fix the TX Delay setting for the MMDVM.
 --------
 
 Port to wxWIdgets-3.0.x
+
+20180703
+--------
+
+Add Icom Terminal and Access Point modes.

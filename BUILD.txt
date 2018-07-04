@@ -1,47 +1,46 @@
-Repeater - 20180510
+Repeater - 20180703
 ===================
 
 Windows
 -------
 
 To use the Repeater control software you will first need to build the latest
-version of wxWidgets (http://www.wxwidgets.org), the version I used was 2.8.12,
-I also installed it in the default location which is C:\wxWidgets-2.8.12.
+version of wxWidgets (http://www.wxwidgets.org), the version I used was 3.0.4.
+I also installed it in the default location which is C:\wxWidgets-3.0.4.
 
 You will also need a copy of PortAudio (http://www.portaudio.com), I used the
-latest stable version which is currently 20071207 and it appears to be fine. I
-put that into the "Visual Studio 2008\Projects" folder alongside the source code
-for Repeater itself. A skeleton version of PortAudio suitable for using to build 
-Repeater is available from the pcrepeatercontroller Yahoo group in the 
-Files/Windows Extras folder.
+latest stable version and it appears to be fine. I put that into the
+"Visual Studio 2017\Projects" folder alongside the source code for the
+Repeater itself.
 
-For compiling I use Visual C++ 2008 Express Edition downloaded from Microsoft
+For compiling I use Visual C++ 2017 Community Edition downloaded from Microsoft
 for free. I recommend that you use the same.
 
-To build wxWidgets, you simply need to open Visual Studio 2008 using the File ->
-Open -> Projects/Solutions and load the wx_dll.dsw file to be found in
-wxWidgets-2.8.12\build\msw directory and then go into Batch Build and select the
-DLL Unicode Debug and DLL Uncode Release entries for every one, this take a 
-little time! Then build them.
+To build wxWidgets, you simply need to open Visual Studio 2017 using the File ->
+Open -> Projects/Solutions and load the wx_vc12.sln file to be found in
+wxWidgets-3.0.4\build\msw directory and then go into Batch Build and select the
+DLL Debug and DLL Release entries for every one, this take a  little time! Then
+build them.
 
 Unfortunately building the software under Windows also requires the downloading 
-of a very large file from Microsoft, the WDK. Adding this to Visual Studio 
-causes a lot of problems, so I created an extract of the required files from the 
-kit and used that instead. If you do want to build this software from scratch, 
-then download the files HID.zip and WinUSB.zip from the Yahoo! group. Otherwise
-simply use the supplied binaries.
+of a very large file from Microsoft, the WDK. There is no easy way around this
+but once installed it can be forgotten about.
 
 The path names for things like wxWidgets and PortAudio are embedded within the
 Solution and Project preferences, and will need changing if anything other than
 these default locations are used. The first pass through the compiler will no
 doubt tell you all that you need to know if there are problems.
 
-Once you have built the executables, you will need to copy the 
-portaudio_x86.dll, wxbase28u_vc_custom.dll, wxmsw28u_adv_vc_custom.dll, 
-and wxmsw28u_core_vc_custom.dll to the same directory as your newly 
-built executables in order for it to run. If you are running in debug mode then 
-the required wxWidgets files have the names xxx28ud_xxxx instead. These can be 
-found in the wxWidgets-2.8.12\lib\vc_dll directory.
+Once you have built the executables, you will need to copy the correct portaudio
+and wxWidgets files to the same location as the executables. For 32-bit systems
+these are portaudio_x86.dll, wxbase30u_vc_custom.dll, wxmsw30u_adv_vc_custom.dll, 
+and wxmsw30u_core_vc_custom.dll. On 64-bit systems you'll need portaudio_x64.dll,
+wxbase30u_vc_x64_custom.dll, wxmsw30u_adv_vc_x64_custom.dll, and
+wxmsw30u_core_vc_x64_custom.dll
+
+If you are running in debug mode then the required wxWidgets files have the names
+xxx30ud_xxxx instead. These can be found in the wxWidgets-3.0.4\lib\vc_dll
+directory.
 
 It is also probable that you'll need to install a copy of the latest Visual C++
 run-time libraries from Microsoft, if you are not running the Repeater software

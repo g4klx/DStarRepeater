@@ -7,6 +7,7 @@ The hardware supported include:
 * Soundcard repeaters (including UDRC)
 * MMDVM (D-Star only)
 * DV-RPTR V1, V2, and V3
+* Icom Terminal and Access Point modes
 
 They all build on 32-bit and 64-bit Linux as well as on Windows using Visual Studio 2017 on x86 and x64.
 
