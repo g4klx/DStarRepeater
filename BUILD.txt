@@ -66,11 +66,6 @@ which is available from <https://projects.drogon.net/raspberry-pi/wiringpi>.
 This will allow use the GPIO pins as controller pins for the different repeaters
 if needed.
 
-The top level Makefile includes platform specific settings from the file 
-"settings.mk". The default file is for x86 Linux systems. Samples for other
-platforms are provided by other developers, copy a required version to
-"settings.mk" when needed.
-
 To actually build the software, type "make" in the same directory as this file
 and all should build without errors, there may be a warning or two though. Once
 compiled log in as root or use the sudo command, and do "make install".
