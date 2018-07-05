@@ -335,12 +335,12 @@ void CDStarRepeaterApp::createThread()
 	m_config->getModem(modemType);
 
 	// DVAP can only do simplex, force the mode accordingly
-	if (modemType.IsSameAs("DVAP")) {
+	if (modemType.IsSameAs("DVAP") || modemType.IsSameAs(wxT("Icom Access Point / Terminal Mode"))) {
 		if (mode == MODE_DUPLEX) {
-			wxLogInfo("DVAP: changing mode from DUPLEX to SIMPLEX");
+			wxLogInfo("Changing mode from DUPLEX to SIMPLEX");
 			mode = MODE_SIMPLEX;
 		} else if (mode == MODE_TXANDRX) {
-			wxLogInfo("DVAP: changing mode from TX_AND_RX to RX_ONLY");
+			wxLogInfo("Changing mode from TX_AND_RX to RX_ONLY");
 			mode = MODE_RXONLY;
 		}
 	}

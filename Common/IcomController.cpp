@@ -159,7 +159,7 @@ void* CIcomController::Entry()
 
 			int ret = m_serial.write(m_buffer, len + 1U);
 			if (ret != int(len + 1U))
-				wxLogWarning(wxT("Error when writing the header to the Icom"));
+				wxLogWarning(wxT("Error when writing to the Icom radio"));
 
 			m_txSpace = false;
 		}
