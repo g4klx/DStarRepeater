@@ -133,9 +133,15 @@ void* CIcomController::Entry()
 			}
 			break;
 
+		case RTI_STATUS:
+			// wxLogMessage(wxT("RTI_STATUS"));
+			if (m_buffer[2U] == 0x01U)
+				m_txSpace = true;
+			break;
+
 		case RTI_HEADER_ACK:
 			// wxLogMessage(wxT("RTI_HEADER_ACK"));
-			m_txSpace = true;
+			// m_txSpace = true;
 			break;
 
 		case RTI_DATA_ACK:
@@ -155,7 +161,7 @@ void* CIcomController::Entry()
 			unsigned int len = m_buffer[0U];
 			m_txData.getData(m_buffer + 1U, len);
 
-			// CUtils::dump(wxT("Sending"), m_buffer, len + 1U);
+			CUtils::dump(wxT("Sending"), m_buffer, len + 1U);
 
 			int ret = m_serial.write(m_buffer, len + 1U);
 			if (ret != int(len + 1U))
@@ -339,11 +345,11 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 			Sleep(5UL);
 	}
 
-	// CUtils::dump(wxT("Received"), buffer, length + 1U);
+	CUtils::dump(wxT("Received"), buffer, length + 1U);
 
 	switch (buffer[1U]) {
 		case 0x03U:
-			return RTI_TIMEOUT;
+			return RTI_STATUS;
 		case 0x10U:
 			return RTI_HEADER;
 		case 0x12U:

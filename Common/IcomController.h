@@ -34,7 +34,8 @@ enum RESP_TYPE_ICOM {
 	RTI_DATA,
 	RTI_EOT,
 	RTI_HEADER_ACK,
-	RTI_DATA_ACK
+	RTI_DATA_ACK,
+	RTI_STATUS
 };
 
 class CIcomController : public CModem {
