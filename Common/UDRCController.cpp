@@ -3,6 +3,8 @@
  *
  */
 
+#if defined(GPIO)
+
 #include <wiringPi.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -119,6 +121,8 @@ void CUDRCController::switchMode(enum repeater_modes mode) {
 			::digitalWrite(EXT1_PIN, LOW);
 			::digitalWrite(EXT2_PIN, LOW);
 			break;
+		default:
+			break;
 	}
 }
 
@@ -132,12 +136,12 @@ bool CUDRCController::open()
 	if(m_mode != HOTSPOT) {
 		::pinMode(m_pttPin, OUTPUT);
 
-		for(int i = 0; i < ARRAY_SIZE(input_pins); ++i) {
+		for(unsigned int i = 0; i < ARRAY_SIZE(input_pins); ++i) {
 			::pinMode(input_pins[i], INPUT);
 			::pullUpDnControl(input_pins[i], PUD_UP);
 		}
 
-		for(int i = 0; i < ARRAY_SIZE(output_pins); ++i) {
+		for(unsigned int i = 0; i < ARRAY_SIZE(output_pins); ++i) {
 			::pinMode(output_pins[i], OUTPUT);
 			::digitalWrite(output_pins[i], HIGH);
 		}
@@ -212,4 +216,6 @@ void CUDRCController::close()
 		::digitalWrite(m_pttPin, HIGH);
 	}
 }
+
+#endif
 

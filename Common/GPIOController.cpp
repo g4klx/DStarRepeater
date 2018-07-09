@@ -1,5 +1,5 @@
 /*
- *	Copyright (C) 2012,2013,2015 by Jonathan Naylor, G4KLX
+ *	Copyright (C) 2012,2013,2015,2018 by Jonathan Naylor, G4KLX
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -10,6 +10,8 @@
  *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *	GNU General Public License for more details.
  */
+
+#if defined(GPIO)
 
 #include "GPIOController.h"
 
@@ -168,3 +170,6 @@ void CGPIOController::setDigitalOutputs(bool outp1, bool outp2, bool outp3, bool
 void CGPIOController::close()
 {
 }
+
+#endif
+

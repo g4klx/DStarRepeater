@@ -1,5 +1,5 @@
 /*
- *	Copyright (C) 2012,2015 by Jonathan Naylor, G4KLX
+ *	Copyright (C) 2012,2015,2018 by Jonathan Naylor, G4KLX
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -13,6 +13,8 @@
 
 #ifndef	GPIOController_H
 #define	GPIOController_H
+
+#if defined(GPIO)
 
 #include "HardwareController.h"
 
@@ -44,3 +46,6 @@ private:
 };
 
 #endif
+
+#endif
+

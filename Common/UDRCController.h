@@ -1,6 +1,8 @@
 #ifndef UDRCController_H
 #define UDRCController_H
 
+#if defined(GPIO)
+
 #include "ExternalController.h"
 
 enum repeater_modes {
@@ -29,5 +31,7 @@ private:
 
 	void switchMode(enum repeater_modes mode);
 };
+
+#endif
 
 #endif // UDRCController_H
