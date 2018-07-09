@@ -69,13 +69,13 @@ void* CIcomController::Entry()
 	wxLogMessage(wxT("Starting Icom Controller thread"));
 
 	// Clock every 5ms-ish
-	CTimer pollTimer(200U, 0U, 100U);
+	CTimer pollTimer(200U, 1U);
 	pollTimer.start();
 
 	while (!m_stopped) {
 		// Poll the modem status every 100ms
 		if (pollTimer.hasExpired()) {
-			m_serial.write((unsigned char*)"\xFF\xFF\xFF", 3U);
+			writePing();
 			pollTimer.start();
 		}
 
@@ -133,20 +133,20 @@ void* CIcomController::Entry()
 			}
 			break;
 
-		case RTI_STATUS:
-			// wxLogMessage(wxT("RTI_STATUS"));
-			if (m_buffer[2U] == 0x01U)
-				m_txSpace = true;
+		case RTI_PONG:
+			// wxLogMessage(wxT("RTI_PONG"));
 			break;
 
 		case RTI_HEADER_ACK:
-			// wxLogMessage(wxT("RTI_HEADER_ACK"));
-			// m_txSpace = true;
+			wxLogMessage(wxT("RTI_HEADER_ACK"));
+			if (m_buffer[2U] == 0x00U)
+				m_txSpace = true;
 			break;
 
 		case RTI_DATA_ACK:
-			// wxLogMessage(wxT("RTI_DATA_ACK"));
-			m_txSpace = true;
+			wxLogMessage(wxT("RTI_DATA_ACK"));
+			if (m_buffer[3U] == 0x00U)
+				m_txSpace = true;
 			break;
 
 		default:
@@ -166,6 +166,8 @@ void* CIcomController::Entry()
 			int ret = m_serial.write(m_buffer, len + 1U);
 			if (ret != int(len + 1U))
 				wxLogWarning(wxT("Error when writing to the Icom radio"));
+
+			pollTimer.start();
 
 			m_txSpace = false;
 		}
@@ -231,7 +233,7 @@ bool CIcomController::writeHeader(const CHeaderData& header)
 
 	m_txData.addData(buffer, 42U);
 
-	m_txSpace = false;
+	m_txSpace = true;
 
 	return true;
 }
@@ -262,8 +264,6 @@ bool CIcomController::writeData(const unsigned char* data, unsigned int, bool en
 
 		m_txData.addData(buffer, 17U);
 
-		m_txSpace = true;
-
 		return true;
 	}
 
@@ -286,8 +286,6 @@ bool CIcomController::writeData(const unsigned char* data, unsigned int, bool en
 	wxMutexLocker locker(m_mutex);
 
 	m_txData.addData(buffer, 17U);
-
-	m_txSpace = false;
 
 	return true;
 }
@@ -331,7 +329,7 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 
 	unsigned int offset = 1U;
 
-	while (offset < length) {
+	while (offset <= length) {
 		ret = m_serial.read(buffer + offset, length - offset);
 		if (ret < 0) {
 			wxLogError(wxT("Error when reading from the Icom radio"));
@@ -345,11 +343,11 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 			Sleep(5UL);
 	}
 
-	CUtils::dump(wxT("Received"), buffer, length + 1U);
+	// CUtils::dump(wxT("Received"), buffer, length + 1U);
 
 	switch (buffer[1U]) {
 		case 0x03U:
-			return RTI_STATUS;
+			return RTI_PONG;
 		case 0x10U:
 			return RTI_HEADER;
 		case 0x12U:
@@ -364,4 +362,9 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 		default:
 			return RTI_UNKNOWN;
 	}
+}
+
+bool CIcomController::writePing()
+{
+	return m_serial.write((unsigned char*)"\x02\x02\xFF", 3U) == 3;
 }

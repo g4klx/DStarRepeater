@@ -35,7 +35,7 @@ enum RESP_TYPE_ICOM {
 	RTI_EOT,
 	RTI_HEADER_ACK,
 	RTI_DATA_ACK,
-	RTI_STATUS
+	RTI_PONG
 };
 
 class CIcomController : public CModem {
@@ -65,6 +65,7 @@ private:
 	bool                       m_txSpace;
 
 	RESP_TYPE_ICOM getResponse(unsigned char* buffer, unsigned int& length);
+	bool writePing();
 };
 
 #endif
