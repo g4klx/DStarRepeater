@@ -297,7 +297,7 @@ unsigned int CIcomController::getSpace()
 
 bool CIcomController::isTXReady()
 {
-	return m_txData.isEmpty();
+	return true;
 }
 
 wxString CIcomController::getPath() const
