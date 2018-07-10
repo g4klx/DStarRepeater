@@ -69,7 +69,7 @@ void* CIcomController::Entry()
 	wxLogMessage(wxT("Starting Icom Controller thread"));
 
 	// Clock every 5ms-ish
-	CTimer pollTimer(200U, 1U);
+	CTimer pollTimer(200U, 0U, 100U);
 	pollTimer.start();
 
 	while (!m_stopped) {
@@ -138,20 +138,20 @@ void* CIcomController::Entry()
 			break;
 
 		case RTI_HEADER_ACK:
-			wxLogMessage(wxT("RTI_HEADER_ACK"));
+			// wxLogMessage(wxT("RTI_HEADER_ACK"));
 			if (m_buffer[2U] == 0x00U)
 				m_txSpace = true;
 			break;
 
 		case RTI_DATA_ACK:
-			wxLogMessage(wxT("RTI_DATA_ACK"));
+			// wxLogMessage(wxT("RTI_DATA_ACK"));
 			if (m_buffer[3U] == 0x00U)
 				m_txSpace = true;
 			break;
 
 		default:
 			wxLogMessage(wxT("Unknown message, type: %02X"), m_buffer[1U]);
-			CUtils::dump(wxT("Buffer dump"), m_buffer, length + 1U);
+			CUtils::dump(wxT("Buffer dump"), m_buffer, length);
 			break;
 		}
 
@@ -161,7 +161,7 @@ void* CIcomController::Entry()
 			unsigned int len = m_buffer[0U];
 			m_txData.getData(m_buffer + 1U, len);
 
-			CUtils::dump(wxT("Sending"), m_buffer, len + 1U);
+			// CUtils::dump(wxT("Sending"), m_buffer, len + 1U);
 
 			int ret = m_serial.write(m_buffer, len + 1U);
 			if (ret != int(len + 1U))
@@ -329,7 +329,7 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 
 	unsigned int offset = 1U;
 
-	while (offset <= length) {
+	while (offset < length) {
 		ret = m_serial.read(buffer + offset, length - offset);
 		if (ret < 0) {
 			wxLogError(wxT("Error when reading from the Icom radio"));
@@ -343,7 +343,7 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 			Sleep(5UL);
 	}
 
-	// CUtils::dump(wxT("Received"), buffer, length + 1U);
+	// CUtils::dump(wxT("Received"), buffer, length);
 
 	switch (buffer[1U]) {
 		case 0x03U:
@@ -366,5 +366,5 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 
 bool CIcomController::writePing()
 {
-	return m_serial.write((unsigned char*)"\x02\x02\xFF", 3U) == 3;
+	return m_serial.write((unsigned char*)"\xFF\xFF\xFF", 3U) == 3;
 }
