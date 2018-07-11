@@ -58,13 +58,13 @@ public:
 private:
 	wxString                   m_port;
 	CSerialDataController      m_serial;
-	unsigned char*             m_buffer;
 	CRingBuffer<unsigned char> m_txData;
 	unsigned char              m_txCounter;
 	unsigned char              m_pktCounter;
 	bool                       m_txSpace;
 
 	RESP_TYPE_ICOM getResponse(unsigned char* buffer, unsigned int& length);
+	bool writePoll();
 	bool writePing();
 };
 
