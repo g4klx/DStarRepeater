@@ -1,4 +1,4 @@
-Repeater - 20180703
+Repeater - 20180710
 ===================
 
 20090530
@@ -2091,3 +2091,8 @@ Port to wxWIdgets-3.0.x
 --------
 
 Add Icom Terminal and Access Point modes.
+
+20180710
+--------
+
+Add error recovery to the Icom Terminal and Access Point modes.
