@@ -12,7 +12,7 @@ export LDFLAGS :=
 all:	DStarRepeater/dstarrepeaterd DStarRepeaterConfig/dstarrepeaterconfig
 
 DStarRepeater/dstarrepeaterd:	Common/Common.a
-	make -C DStarRepeater dstarrepeaterd
+	make -C DStarRepeater
 
 DStarRepeaterConfig/dstarrepeaterconfig:	GUICommon/GUICommon.a Common/Common.a
 	make -C DStarRepeaterConfig
