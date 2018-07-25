@@ -35,7 +35,7 @@ CIcomController::CIcomController(const wxString& port) :
 CModem(),
 m_port(port),
 m_serial(port, SERIAL_38400, true),
-m_txData(1000U),
+m_txData(2000U),
 m_txCounter(0U),
 m_pktCounter(0U),
 m_txSpace(true)
