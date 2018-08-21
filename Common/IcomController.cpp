@@ -397,7 +397,7 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 	unsigned int offset = 1U;
 
 	while (offset < length) {
-		ret = m_serial.read(buffer + offset, length - offset);
+		ret = m_serial.read(buffer + offset, length - offset, 40U);
 		if (ret < 0) {
 			wxLogError(wxT("Error when reading from the Icom radio"));
 			return RTI_ERROR;
@@ -407,7 +407,7 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 			offset += ret;
 
 		if (ret == 0)
-			Sleep(5UL);
+			return RTI_TIMEOUT;
 	}
 
 	// CUtils::dump(wxT("Received"), buffer, length);

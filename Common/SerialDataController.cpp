@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2002-2004,2007-2011,2013,2014,2015 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2002-2004,2007-2011,2013,2014,2015,2018 by Jonathan Naylor G4KLX
  *   Copyright (C) 1999-2001 by Thomas Sailor HB9JNX
  *
  *   This program is free software; you can redistribute it and/or modify
@@ -148,7 +148,7 @@ bool CSerialDataController::open()
 	return true;
 }
 
-int CSerialDataController::read(unsigned char* buffer, unsigned int length)
+int CSerialDataController::read(unsigned char* buffer, unsigned int length, unsigned int timeout)
 {
 	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
 	wxASSERT(buffer != NULL);
@@ -156,7 +156,7 @@ int CSerialDataController::read(unsigned char* buffer, unsigned int length)
 	unsigned int ptr = 0U;
 
 	while (ptr < length) {
-		int ret = readNonblock(buffer + ptr, length - ptr);
+		int ret = readNonblock(buffer + ptr, length - ptr, timeout);
 		if (ret < 0) {
 			return ret;
 		} else if (ret == 0) {
@@ -170,7 +170,7 @@ int CSerialDataController::read(unsigned char* buffer, unsigned int length)
 	return int(length);
 }
 
-int CSerialDataController::readNonblock(unsigned char* buffer, unsigned int length)
+int CSerialDataController::readNonblock(unsigned char* buffer, unsigned int length, unsigned int timeout)
 {
 	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
 	wxASSERT(buffer != NULL);
@@ -377,7 +377,7 @@ bool CSerialDataController::open()
 	return true;
 }
 
-int CSerialDataController::read(unsigned char* buffer, unsigned int length)
+int CSerialDataController::read(unsigned char* buffer, unsigned int length, unsigned int timeout)
 {
 	wxASSERT(buffer != NULL);
 	wxASSERT(m_fd != -1);
@@ -395,8 +395,8 @@ int CSerialDataController::read(unsigned char* buffer, unsigned int length)
 		int n;
 		if (offset == 0U) {
 			struct timeval tv;
-			tv.tv_sec  = 0;
-			tv.tv_usec = 0;
+			tv.tv_sec  =  timeout / 1000U;
+			tv.tv_usec = (timeout % 1000U) * 1000U;
 
 			n = ::select(m_fd + 1, &fds, NULL, NULL, &tv);
 			if (n == 0)

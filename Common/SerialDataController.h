@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2002-2004,2007-2009,2011-2013,2015 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2002-2004,2007-2009,2011-2013,2015,2018 by Jonathan Naylor G4KLX
  *   Copyright (C) 1999-2001 by Thomas Sailor HB9JNX
  *
  *   This program is free software; you can redistribute it and/or modify
@@ -45,7 +45,7 @@ public:
 
 	bool open();
 
-	int  read(unsigned char* buffer, unsigned int length);
+	int  read(unsigned char* buffer, unsigned int length, unsigned int timeout = 0U);
 	int  write(const unsigned char* buffer, unsigned int length);
 
 	void close();
@@ -66,7 +66,7 @@ private:
 #endif
 
 #if defined(__WINDOWS__)
-	int readNonblock(unsigned char* buffer, unsigned int length);
+	int readNonblock(unsigned char* buffer, unsigned int length, unsigned int timeout);
 #endif
 };
 
