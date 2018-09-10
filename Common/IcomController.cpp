@@ -162,7 +162,7 @@ void* CIcomController::Entry()
 			break;
 
 		case RTI_HEADER_ACK:
-			// wxLogMessage(wxT("RTI_HEADER_ACK"));
+			wxLogMessage(wxT("RTI_HEADER_ACK"));
 
 			storeLength = 0U;
 			retryTimer.stop();
@@ -174,7 +174,7 @@ void* CIcomController::Entry()
 			break;
 
 		case RTI_DATA_ACK:
-			// wxLogMessage(wxT("RTI_DATA_ACK"));
+			wxLogMessage(wxT("RTI_DATA_ACK"));
 
 			storeLength = 0U;
 			retryTimer.stop();
@@ -194,7 +194,7 @@ void* CIcomController::Entry()
 		if (retryTimer.isRunning() && retryTimer.hasExpired() && connected) {
 			assert(storeLength > 0U);
 
-			// CUtils::dump(wxT("Re-Sending"), storeData, storeLength + 1U);
+			CUtils::dump(wxT("Re-Sending"), storeData, storeLength + 1U);
 
 			int ret = m_serial.write(storeData, storeLength + 1U);
 			if (ret != int(storeLength + 1U))
@@ -210,7 +210,7 @@ void* CIcomController::Entry()
 			storeLength = storeData[0U];
 			m_txData.getData(storeData + 1U, storeLength);
 
-			// CUtils::dump(wxT("Sending"), storeData, storeLength + 1U);
+			CUtils::dump(wxT("Sending"), storeData, storeLength + 1U);
 
 			int ret = m_serial.write(storeData, storeLength + 1U);
 			if (ret != int(storeLength + 1U))
@@ -410,7 +410,7 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 			return RTI_TIMEOUT;
 	}
 
-	// CUtils::dump(wxT("Received"), buffer, length);
+	CUtils::dump(wxT("Received"), buffer, length);
 
 	switch (buffer[1U]) {
 		case 0x03U:
