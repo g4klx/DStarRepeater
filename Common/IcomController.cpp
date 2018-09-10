@@ -406,8 +406,10 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 		if (ret > 0)
 			offset += ret;
 
-		if (ret == 0)
+		if (ret == 0) {
+			CUtils::dump(wxT("Receive timed out"), buffer, offset);
 			return RTI_TIMEOUT;
+		}
 	}
 
 	CUtils::dump(wxT("Received"), buffer, length);
