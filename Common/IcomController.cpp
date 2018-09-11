@@ -128,6 +128,7 @@ void* CIcomController::Entry()
 				m_rxData.addData(buffer + 2U, RADIO_HEADER_LENGTH_BYTES);
 
 				lostTimer.start();
+				txSpace = true;
 			}
 			break;
 
@@ -143,6 +144,7 @@ void* CIcomController::Entry()
 				m_rxData.addData(buffer + 4U, DV_FRAME_LENGTH_BYTES);
 
 				lostTimer.start();
+				txSpace = true;
 			}
 			break;
 
@@ -156,6 +158,7 @@ void* CIcomController::Entry()
 				m_rxData.addData(data, 2U);
 
 				lostTimer.start();
+				txSpace = true;
 			}
 			break;
 
@@ -168,13 +171,13 @@ void* CIcomController::Entry()
 			break;
 
 		case RTI_HEADER_ACK:
-			storeLength = 0U;
-			retryTimer.stop();
-
 			if (buffer[2U] == 0x00U) {
 				wxLogMessage(wxT("RTI_HEADER_ACK"));
-				if (state == SI_HEADER)
+				if (state == SI_HEADER) {
+					storeLength = 0U;
+					retryTimer.stop();
 					txSpace = true;
+				}
 			} else {
 				wxLogMessage(wxT("RTI_HEADER_NAK"));
 			}
@@ -183,13 +186,13 @@ void* CIcomController::Entry()
 			break;
 
 		case RTI_DATA_ACK:
-			storeLength = 0U;
-			retryTimer.stop();
-
 			if (buffer[3U] == 0x00U) {
 				wxLogMessage(wxT("RTI_DATA_ACK - %02X"), buffer[2U]);
-				if (state == SI_DATA && seqNo == buffer[2U])
+				if (state == SI_DATA && seqNo == buffer[2U]) {
+					storeLength = 0U;
+					retryTimer.stop();
 					txSpace = true;
+				}
 			} else {
 				wxLogMessage(wxT("RTI_DATA_NAK - %02X"), buffer[2U]);
 			}
@@ -258,6 +261,10 @@ void* CIcomController::Entry()
 
 			retryTimer.stop();
 			storeLength = 0U;
+
+			state = SI_NONE;
+			seqNo = 0U;
+			txSpace = true;
 
 			lostTimer.start();
 			connected = false;
