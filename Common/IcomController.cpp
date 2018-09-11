@@ -232,7 +232,7 @@ void* CIcomController::Entry()
 				seqNo = 0U;
 			} else {
 				state = SI_DATA;
-				seqNo = buffer[2U];
+				seqNo = storeData[2U];
 			}
 
 			int ret = m_serial.write(storeData, storeLength + 1U);
