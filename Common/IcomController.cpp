@@ -172,14 +172,14 @@ void* CIcomController::Entry()
 
 		case RTI_HEADER_ACK:
 			if (buffer[2U] == 0x00U) {
-				wxLogMessage(wxT("RTI_HEADER_ACK"));
+				// wxLogMessage(wxT("RTI_HEADER_ACK"));
 				if (state == SI_HEADER) {
 					storeLength = 0U;
 					retryTimer.stop();
 					txSpace = true;
 				}
 			} else {
-				wxLogMessage(wxT("RTI_HEADER_NAK"));
+				// wxLogMessage(wxT("RTI_HEADER_NAK"));
 			}
 
 			lostTimer.start();
@@ -187,14 +187,14 @@ void* CIcomController::Entry()
 
 		case RTI_DATA_ACK:
 			if (buffer[3U] == 0x00U) {
-				wxLogMessage(wxT("RTI_DATA_ACK - %02X"), buffer[2U]);
+				// wxLogMessage(wxT("RTI_DATA_ACK - %02X"), buffer[2U]);
 				if (state == SI_DATA && seqNo == buffer[2U]) {
 					storeLength = 0U;
 					retryTimer.stop();
 					txSpace = true;
 				}
 			} else {
-				wxLogMessage(wxT("RTI_DATA_NAK - %02X"), buffer[2U]);
+				// wxLogMessage(wxT("RTI_DATA_NAK - %02X"), buffer[2U]);
 			}
 
 			lostTimer.start();
@@ -209,7 +209,7 @@ void* CIcomController::Entry()
 		if (retryTimer.isRunning() && retryTimer.hasExpired() && connected) {
 			assert(storeLength > 0U);
 
-			CUtils::dump(wxT("Re-Sending"), storeData, storeLength + 1U);
+			// CUtils::dump(wxT("Re-Sending"), storeData, storeLength + 1U);
 
 			int ret = m_serial.write(storeData, storeLength + 1U);
 			if (ret != int(storeLength + 1U))
@@ -225,7 +225,7 @@ void* CIcomController::Entry()
 			storeLength = storeData[0U];
 			m_txData.getData(storeData + 1U, storeLength);
 
-			CUtils::dump(wxT("Sending"), storeData, storeLength + 1U);
+			// CUtils::dump(wxT("Sending"), storeData, storeLength + 1U);
 
 			if (storeData[1U] == 0x20U) {
 				state = SI_HEADER;
