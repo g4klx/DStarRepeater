@@ -27,6 +27,12 @@
 #include <wx/dir.h>
 #endif
 
+enum STATE_ICOM {
+	SI_NONE,
+	SI_HEADER,
+	SI_DATA
+};
+
 const unsigned int MAX_RESPONSES = 30U;
 
 const unsigned int BUFFER_LENGTH = 200U;
@@ -37,8 +43,7 @@ m_port(port),
 m_serial(port, SERIAL_38400, true),
 m_txData(2000U),
 m_txCounter(0U),
-m_pktCounter(0U),
-m_txSpace(true)
+m_pktCounter(0U)
 {
 	wxASSERT(!port.IsEmpty());
 }
@@ -64,13 +69,13 @@ void* CIcomController::Entry()
 {
 	wxLogMessage(wxT("Starting Icom Controller thread"));
 
-	// Clock every 5ms-ish
-	CTimer pollTimer(200U, 0U, 100U);
+	// Clock every 10ms-ish
+	CTimer pollTimer(100U, 0U, 100U);
 	pollTimer.start();
 
-	CTimer retryTimer(200U, 0U, 50U);
+	CTimer retryTimer(100U, 0U, 50U);
 
-	CTimer lostTimer(200U, 5U);
+	CTimer lostTimer(100U, 5U);
 	lostTimer.start();
 	
 	unsigned char storeData[BUFFER_LENGTH];
@@ -80,6 +85,10 @@ void* CIcomController::Entry()
 	
 	bool connected = false;
 	
+	STATE_ICOM    state   = SI_NONE;
+	unsigned char seqNo   = 0U;
+	bool          txSpace = true;
+
 	while (!m_stopped) {
 		if (pollTimer.hasExpired()) {
 			if (pollCount == 18U) {
@@ -119,7 +128,6 @@ void* CIcomController::Entry()
 				m_rxData.addData(buffer + 2U, RADIO_HEADER_LENGTH_BYTES);
 
 				lostTimer.start();
-				m_txSpace = true;
 			}
 			break;
 
@@ -135,7 +143,6 @@ void* CIcomController::Entry()
 				m_rxData.addData(buffer + 4U, DV_FRAME_LENGTH_BYTES);
 
 				lostTimer.start();
-				m_txSpace = true;
 			}
 			break;
 
@@ -149,7 +156,6 @@ void* CIcomController::Entry()
 				m_rxData.addData(data, 2U);
 
 				lostTimer.start();
-				m_txSpace = true;
 			}
 			break;
 
@@ -167,7 +173,8 @@ void* CIcomController::Entry()
 
 			if (buffer[2U] == 0x00U) {
 				wxLogMessage(wxT("RTI_HEADER_ACK"));
-				m_txSpace = true;
+				if (state == SI_HEADER)
+					txSpace = true;
 			} else {
 				wxLogMessage(wxT("RTI_HEADER_NAK"));
 			}
@@ -181,7 +188,8 @@ void* CIcomController::Entry()
 
 			if (buffer[3U] == 0x00U) {
 				wxLogMessage(wxT("RTI_DATA_ACK - %02X"), buffer[2U]);
-				m_txSpace = true;
+				if (state == SI_DATA && seqNo == buffer[2U])
+					txSpace = true;
 			} else {
 				wxLogMessage(wxT("RTI_DATA_NAK - %02X"), buffer[2U]);
 			}
@@ -208,13 +216,21 @@ void* CIcomController::Entry()
 			pollTimer.start();
 		}
 
-		if (m_txSpace && !m_txData.isEmpty() && connected) {
+		if (txSpace && !m_txData.isEmpty() && connected) {
 			m_txData.getData(storeData, 1U);
 
 			storeLength = storeData[0U];
 			m_txData.getData(storeData + 1U, storeLength);
 
 			CUtils::dump(wxT("Sending"), storeData, storeLength + 1U);
+
+			if (buffer[1U] == 0x20U) {
+				state = SI_HEADER;
+				seqNo = 0U;
+			} else {
+				state = SI_DATA;
+				seqNo = buffer[2U];
+			}
 
 			int ret = m_serial.write(storeData, storeLength + 1U);
 			if (ret != int(storeLength + 1U))
@@ -223,10 +239,10 @@ void* CIcomController::Entry()
 			retryTimer.start();
 			pollTimer.start();
 
-			m_txSpace = false;
+			txSpace = false;
 		}
 
-		Sleep(5UL);
+		Sleep(10UL);
 
 		pollTimer.clock();
 		lostTimer.clock();
