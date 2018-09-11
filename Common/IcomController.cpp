@@ -68,7 +68,7 @@ void* CIcomController::Entry()
 	CTimer pollTimer(200U, 0U, 100U);
 	pollTimer.start();
 
-	CTimer retryTimer(200U, 0U, 20U);
+	CTimer retryTimer(200U, 0U, 50U);
 
 	CTimer lostTimer(200U, 5U);
 	lostTimer.start();
@@ -162,25 +162,29 @@ void* CIcomController::Entry()
 			break;
 
 		case RTI_HEADER_ACK:
-			wxLogMessage(wxT("RTI_HEADER_ACK"));
-
 			storeLength = 0U;
 			retryTimer.stop();
 
-			if (buffer[2U] == 0x00U)
+			if (buffer[2U] == 0x00U) {
+				wxLogMessage(wxT("RTI_HEADER_ACK"));
 				m_txSpace = true;
+			} else {
+				wxLogMessage(wxT("RTI_HEADER_NAK"));
+			}
 
 			lostTimer.start();
 			break;
 
 		case RTI_DATA_ACK:
-			wxLogMessage(wxT("RTI_DATA_ACK"));
-
 			storeLength = 0U;
 			retryTimer.stop();
 
-			if (buffer[3U] == 0x00U)
+			if (buffer[3U] == 0x00U) {
+				wxLogMessage(wxT("RTI_DATA_ACK - %02X"), buffer[2U]);
 				m_txSpace = true;
+			} else {
+				wxLogMessage(wxT("RTI_DATA_NAK - %02X"), buffer[2U]);
+			}
 
 			lostTimer.start();
 			break;
@@ -300,8 +304,6 @@ bool CIcomController::writeHeader(const CHeaderData& header)
 
 	m_txData.addData(buffer, 42U);
 
-	m_txSpace = true;
-
 	return true;
 }
 
@@ -412,7 +414,7 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 		}
 	}
 
-	CUtils::dump(wxT("Received"), buffer, length);
+	// CUtils::dump(wxT("Received"), buffer, length);
 
 	switch (buffer[1U]) {
 		case 0x03U:
