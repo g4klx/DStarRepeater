@@ -69,13 +69,13 @@ void* CIcomController::Entry()
 {
 	wxLogMessage(wxT("Starting Icom Controller thread"));
 
-	// Clock every 10ms-ish
-	CTimer pollTimer(100U, 0U, 100U);
+	// Clock every 5ms-ish
+	CTimer pollTimer(200U, 0U, 100U);
 	pollTimer.start();
 
-	CTimer retryTimer(100U, 0U, 50U);
+	CTimer retryTimer(200U, 0U, 50U);
 
-	CTimer lostTimer(100U, 5U);
+	CTimer lostTimer(200U, 5U);
 	lostTimer.start();
 	
 	unsigned char storeData[BUFFER_LENGTH];
@@ -245,7 +245,7 @@ void* CIcomController::Entry()
 			txSpace = false;
 		}
 
-		Sleep(10UL);
+		Sleep(5UL);
 
 		pollTimer.clock();
 		lostTimer.clock();
