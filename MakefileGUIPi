@@ -25,7 +25,7 @@ Common/Common.a:
 
 install:	all
 	make -C Data install
-	make -C DStarRepeater install
+	make -C DStarRepeater -f MakefileGUI install
 	make -C DStarRepeaterConfig install
 
 clean:
