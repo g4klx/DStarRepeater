@@ -227,7 +227,7 @@ void* CIcomController::Entry()
 
 			CUtils::dump(wxT("Sending"), storeData, storeLength + 1U);
 
-			if (buffer[1U] == 0x20U) {
+			if (storeData[1U] == 0x20U) {
 				state = SI_HEADER;
 				seqNo = 0U;
 			} else {
