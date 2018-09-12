@@ -209,7 +209,7 @@ void* CIcomController::Entry()
 			break;
 		}
 		
-		if (retryTimer.isRunning() && retryTimer.hasExpired() && connected) {
+		if (retryTimer.isRunning() && retryTimer.hasExpired()) {
 			assert(storeLength > 0U);
 
 			CUtils::dump(wxT("Re-Sending"), storeData, storeLength + 1U);
@@ -222,7 +222,7 @@ void* CIcomController::Entry()
 			pollTimer.start();
 		}
 
-		if (txSpace && !m_txData.isEmpty() && connected) {
+		if (txSpace && !m_txData.isEmpty()) {
 			m_txData.getData(storeData, 1U);
 
 			storeLength = storeData[0U];
