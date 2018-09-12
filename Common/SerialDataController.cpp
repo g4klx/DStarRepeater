@@ -205,15 +205,21 @@ int CSerialDataController::readNonblock(unsigned char* buffer, unsigned int leng
 		m_readPending = true;
 	}
 
-	BOOL res = HasOverlappedIoCompleted(&m_readOverlapped);
-	if (!res)
-		return 0;
-
-	DWORD bytes = 0UL;
-	res = ::GetOverlappedResult(m_handle, &m_readOverlapped, &bytes, TRUE);
+	DWORD bytes  = 0UL;
+	DWORD millis = timeout;
+	res = ::GetOverlappedResultEx(m_handle, &m_readOverlapped, &bytes, millis, FALSE);
 	if (!res) {
-		wxLogError(wxT("Error from GetOverlappedResult (ReadFile): %04lx"), ::GetLastError());
-		return -1;
+		DWORD error = ::GetLastError();
+		if (timeout == 0U && error == ERROR_IO_INCOMPLETE) {
+			return 0;
+		} else if (timeout > 0U && error == WAIT_TIMEOUT) {
+			return 0;
+		} else if (timeout > 0U && error == WAIT_IO_COMPLETION) {
+			return 0;
+		} else {
+			wxLogError(wxT("Error from GetOverlappedResultEx (ReadFile): %04lx"), error);
+			return -1;
+		}
 	}
 
 	::memcpy(buffer, m_readBuffer, bytes);
