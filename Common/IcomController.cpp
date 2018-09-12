@@ -405,7 +405,7 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 	// Get the start of the frame or nothing at all
 	int ret = m_serial.read(buffer, 1U);
 	if (ret < 0) {
-		wxLogError(wxT("Error when reading from the Icom radio"));
+		wxLogError(wxT("Error when reading the length from the Icom radio"));
 		return RTI_ERROR;
 	}
 
@@ -417,17 +417,33 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 
 	length = buffer[0U];
 
-	if (length >= 100U) {
-		wxLogError(wxT("Invalid data received from the Icom radio"));
+	// Validate the message lengths
+	if (buffer[0U] != 0x03U && buffer[0U] != 0x04U && buffer[0U] != 0x10U && buffer[0U] != 0x2CU) {
+		wxLogError(wxT("Invalid data length received from the Icom radio - 0x%02X"), length);
+		return RTI_TIMEOUT;
+	}
+
+	ret = m_serial.read(buffer + 1U, 1U, 40U);
+	if (ret < 0) {
+		wxLogError(wxT("Error when reading the type from the Icom radio"));
 		return RTI_ERROR;
 	}
 
-	unsigned int offset = 1U;
+	if (ret == 0)
+		return RTI_TIMEOUT;
+
+	// Validate the message types
+	if (buffer[1U] != 0x03U && buffer[1U] != 0x10U && buffer[1U] != 0x12U && buffer[1U] != 0x21U && buffer[1U] != 0x23U) {
+		wxLogError(wxT("Invalid data type received from the Icom radio - 0x%02X"), buffer[1U]);
+		return RTI_TIMEOUT;
+	}
+
+	unsigned int offset = 2U;
 
 	while (offset < length) {
 		ret = m_serial.read(buffer + offset, length - offset, 40U);
 		if (ret < 0) {
-			wxLogError(wxT("Error when reading from the Icom radio"));
+			wxLogError(wxT("Error when reading data from the Icom radio"));
 			return RTI_ERROR;
 		}
 
