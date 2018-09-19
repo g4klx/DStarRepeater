@@ -31,6 +31,6 @@ install:	all
 clean:
 	make -C Common clean
 	make -C GUICommon clean
-	make -C DStarRepeater clean
+	make -C DStarRepeater -f MakefileGUI clean
 	make -C DStarRepeaterConfig clean
 
