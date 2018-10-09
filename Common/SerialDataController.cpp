@@ -207,7 +207,7 @@ int CSerialDataController::readNonblock(unsigned char* buffer, unsigned int leng
 
 	DWORD bytes  = 0UL;
 	DWORD millis = timeout;
-	res = ::GetOverlappedResultEx(m_handle, &m_readOverlapped, &bytes, millis, FALSE);
+	BOOL res = ::GetOverlappedResultEx(m_handle, &m_readOverlapped, &bytes, millis, FALSE);
 	if (!res) {
 		DWORD error = ::GetLastError();
 		if (timeout == 0U && error == ERROR_IO_INCOMPLETE) {
