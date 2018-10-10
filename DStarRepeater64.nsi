@@ -11,8 +11,8 @@
 ;Configuration
 
   ;General
-  Name "DStarRepeater 20180710"
-  OutFile "DStarRepeater64-20180710.exe"
+  Name "DStarRepeater 20180911"
+  OutFile "DStarRepeater64-20180911.exe"
 
   ;Folder selection page
   InstallDir "$PROGRAMFILES64\D-Star Repeater"
