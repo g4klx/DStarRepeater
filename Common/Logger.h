@@ -22,24 +22,21 @@
 #include <wx/wx.h>
 #include <wx/ffile.h>
 #include <wx/filename.h>
-#include <wx/log.h>
 
 class CLogger : public wxLog {
 public:
 	CLogger(const wxString& directory, const wxString& name);
 	virtual ~CLogger();
 
-	virtual void DoLogRecord(wxLogLevel level, const wxString& msg, const wxLogRecordInfo& info);
+	virtual void DoLog(wxLogLevel level, const wxChar* msg, time_t timestamp);
+	virtual void DoLogString(const wxChar* msg, time_t timestamp);
 
 private:
 	wxString   m_name;
 	wxFFile*   m_file;
 	wxFileName m_fileName;
-#if(defined(__WINDOWS__))
 	int        m_day;
-#endif
-
-	void logString(const wxString& msg, time_t timestamp);
 };
 
 #endif
+
