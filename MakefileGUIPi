@@ -12,25 +12,25 @@ export LDFLAGS :=
 all:	DStarRepeater/dstarrepeater DStarRepeaterConfig/dstarrepeaterconfig
 
 DStarRepeater/dstarrepeater:	GUICommon/GUICommon.a Common/Common.a
-	make -C DStarRepeater -f MakefileGUI
+	$(MAKE) -C DStarRepeater -f MakefileGUI
 
 DStarRepeaterConfig/dstarrepeaterconfig:	GUICommon/GUICommon.a Common/Common.a
-	make -C DStarRepeaterConfig
+	$(MAKE) -C DStarRepeaterConfig
 
 GUICommon/GUICommon.a:
-	make -C GUICommon
+	$(MAKE) -C GUICommon
 
 Common/Common.a:
-	make -C Common
+	$(MAKE) -C Common
 
 install:	all
-	make -C Data install
-	make -C DStarRepeater -f MakefileGUI install
-	make -C DStarRepeaterConfig install
+	$(MAKE) -C Data install
+	$(MAKE) -C DStarRepeater -f MakefileGUI install
+	$(MAKE) -C DStarRepeaterConfig install
 
 clean:
-	make -C Common clean
-	make -C GUICommon clean
-	make -C DStarRepeater clean
-	make -C DStarRepeaterConfig clean
+	$(MAKE) -C Common clean
+	$(MAKE) -C GUICommon clean
+	$(MAKE) -C DStarRepeater clean
+	$(MAKE) -C DStarRepeaterConfig clean
 
