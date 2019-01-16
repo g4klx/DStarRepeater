@@ -233,7 +233,8 @@ void CSoundCardReaderWriter::callback(const wxFloat32* input, wxFloat32* output,
 {
 	if (m_callback != NULL) {
 		m_callback->readCallback(input, nSamples, m_id);
-		m_callback->writeCallback(output, nSamples, m_id);
+		int count = int(nSamples);
+		m_callback->writeCallback(output, count, m_id);
 	}
 }
 
