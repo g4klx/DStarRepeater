@@ -730,25 +730,25 @@ void* CSoundCardWriter::Entry()
 	wxLogMessage(wxT("Starting ALSA writer thread"));
 
 	while (!m_killed) {
-		unsigned int nSamples = 2U * m_blockSize;
+		int nSamples = 2U * m_blockSize;
 		m_callback->writeCallback(m_buffer, nSamples, m_id);
 
 		if (nSamples == 0U) {
 			Sleep(5UL);
 		} else {
 			if (m_channels == 1U) {
-				for (unsigned int n = 0U; n < nSamples; n++)
+				for (int n = 0U; n < nSamples; n++)
 					m_samples[n] = short(m_buffer[n] * 32767.0F);
 			} else {
-				unsigned int i = 0U;
-				for (unsigned int n = 0U; n < nSamples; n++) {
+				int i = 0U;
+				for (int n = 0U; n < nSamples; n++) {
 					short sample = short(m_buffer[n] * 32767.0F);
 					m_samples[i++] = sample;
 					m_samples[i++] = sample;			// Same value to both channels
 				}
 			}
         
-			unsigned int offset = 0U;
+			int offset = 0U;
 			snd_pcm_sframes_t ret;
 			while ((ret = ::snd_pcm_writei(m_handle, m_samples + offset, nSamples - offset)) != (nSamples - offset)) {
 				if (ret < 0) {
@@ -759,7 +759,7 @@ void* CSoundCardWriter::Entry()
 
 					::snd_pcm_recover(m_handle, ret, 1);
 				} else {
-					offset += (unsigned int)ret;
+					offset += ret;
 				}
 			}
 		}

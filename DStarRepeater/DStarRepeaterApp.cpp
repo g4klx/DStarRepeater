@@ -503,13 +503,15 @@ void CDStarRepeaterApp::createThread()
 		wxLogInfo("Split, local: %s:%u, timeout: %u ms", localAddress.c_str(), localPort, timeout);
 		for (unsigned int i = 0U; i < transmitterNames.GetCount(); i++) {
 			wxString name = transmitterNames.Item(i);
-			if (!name.IsEmpty())
+			if (!name.IsEmpty()) {
 				wxLogInfo("\tTX %u name: %s", i + 1U, name.c_str());
+			}
 		}
 		for (unsigned int i = 0U; i < receiverNames.GetCount(); i++) {
 			wxString name = receiverNames.Item(i);
-			if (!name.IsEmpty())
+			if (!name.IsEmpty()) {
 				wxLogInfo("\tRX %u name: %s", i + 1U, name.c_str());
+			}
 		}
 		modem = new CSplitController(localAddress, localPort, transmitterNames, receiverNames, timeout);
 	} else if (modemType.IsSameAs("Icom Access Point/Terminal Mode")) {

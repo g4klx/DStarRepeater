@@ -591,7 +591,7 @@ void CSoundCardController::readCallback(const wxFloat32* input, unsigned int n, 
 #endif
 }
 
-void CSoundCardController::writeCallback(wxFloat32* output, unsigned int& n, int id)
+void CSoundCardController::writeCallback(wxFloat32* output, int& n, int id)
 {
         if (n == 0U)
                 return;
