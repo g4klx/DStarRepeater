@@ -19,7 +19,7 @@
 class IAudioCallback {
 public:
 	virtual void readCallback(const wxFloat32* input, unsigned int nSamples, int id) = 0;
-	virtual void writeCallback(wxFloat32* output, unsigned int& nSamples, int id) = 0;
+	virtual void writeCallback(wxFloat32* output, int& nSamples, int id) = 0;
 
 private:
 };

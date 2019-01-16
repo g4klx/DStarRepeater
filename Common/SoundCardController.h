@@ -52,7 +52,7 @@ public:
 	virtual bool writeData(const unsigned char* data, unsigned int length, bool end);
 
 	virtual void readCallback(const wxFloat32* input, unsigned int n, int id);
-	virtual void writeCallback(wxFloat32* output, unsigned int& n, int id);
+	virtual void writeCallback(wxFloat32* output, int& n, int id);
 
 private:
 	CSoundCardReaderWriter     m_sound;
