@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2011-2015,2018 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2011-2015,2018,2019 by Jonathan Naylor G4KLX
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -117,7 +117,7 @@ void* CIcomController::Entry()
 			return NULL;
 
 		case RTI_HEADER: {
-				CUtils::dump(wxT("RTI_HEADER"), buffer, length);
+				// CUtils::dump(wxT("RTI_HEADER"), buffer, length);
 
 				wxMutexLocker locker(m_mutex);
 
@@ -134,7 +134,7 @@ void* CIcomController::Entry()
 			break;
 
 		case RTI_DATA: {
-				CUtils::dump(wxT("RTI_DATA"), buffer, length);
+				// CUtils::dump(wxT("RTI_DATA"), buffer, length);
 
 				wxMutexLocker locker(m_mutex);
 
@@ -151,7 +151,7 @@ void* CIcomController::Entry()
 			break;
 
 		case RTI_EOT: {
-				wxLogMessage(wxT("RTI_EOT"));
+				// wxLogMessage(wxT("RTI_EOT"));
 
 				wxMutexLocker locker(m_mutex);
 
@@ -175,7 +175,7 @@ void* CIcomController::Entry()
 
 		case RTI_HEADER_ACK:
 			if (buffer[2U] == 0x00U) {
-				wxLogMessage(wxT("RTI_HEADER_ACK"));
+				// wxLogMessage(wxT("RTI_HEADER_ACK"));
 				if (state == SI_HEADER) {
 					storeLength = 0U;
 					retryTimer.stop();
@@ -190,7 +190,7 @@ void* CIcomController::Entry()
 
 		case RTI_DATA_ACK:
 			if (buffer[3U] == 0x00U) {
-				wxLogMessage(wxT("RTI_DATA_ACK - %02X"), buffer[2U]);
+				// wxLogMessage(wxT("RTI_DATA_ACK - %02X"), buffer[2U]);
 				if (state == SI_DATA && seqNo == buffer[2U]) {
 					storeLength = 0U;
 					retryTimer.stop();
@@ -212,7 +212,7 @@ void* CIcomController::Entry()
 		if (retryTimer.isRunning() && retryTimer.hasExpired()) {
 			assert(storeLength > 0U);
 
-			CUtils::dump(wxT("Re-Sending"), storeData, storeLength + 1U);
+			// CUtils::dump(wxT("Re-Sending"), storeData, storeLength + 1U);
 
 			int ret = m_serial.write(storeData, storeLength + 1U);
 			if (ret != int(storeLength + 1U))
@@ -228,7 +228,7 @@ void* CIcomController::Entry()
 			storeLength = storeData[0U];
 			m_txData.getData(storeData + 1U, storeLength);
 
-			CUtils::dump(wxT("Sending"), storeData, storeLength + 1U);
+			// CUtils::dump(wxT("Sending"), storeData, storeLength + 1U);
 
 			if (storeData[1U] == 0x20U) {
 				state = SI_HEADER;
@@ -451,7 +451,7 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 			offset += ret;
 
 		if (ret == 0) {
-			CUtils::dump(wxT("Receive timed out"), buffer, offset);
+			// CUtils::dump(wxT("Receive timed out"), buffer, offset);
 			return RTI_TIMEOUT;
 		}
 	}
