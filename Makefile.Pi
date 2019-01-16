@@ -23,7 +23,7 @@ GUICommon/GUICommon.a: force
 Common/Common.a: force
 	$(MAKE) -C Common
 
-.PHONY:
+.PHONY: install
 install:	all
 	$(MAKE) -C Data install
 	$(MAKE) -C DStarRepeater install

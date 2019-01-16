@@ -8,3 +8,4 @@ Release
 *.bak
 .vs
 *.a
+*.d
