@@ -232,7 +232,7 @@ void* CDVMegaController::Entry()
 				break;
 
 			case RTM_EOT: {
-					wxLogMessage(wxT("RT_EOT"));
+					// wxLogMessage(wxT("RT_EOT"));
 					wxMutexLocker locker(m_mutex);
 
 					unsigned char data[2U];
@@ -245,7 +245,7 @@ void* CDVMegaController::Entry()
 				break;
 
 			case RTM_RXLOST: {
-					wxLogMessage(wxT("RT_LOST"));
+					// wxLogMessage(wxT("RT_LOST"));
 					wxMutexLocker locker(m_mutex);
 
 					unsigned char data[2U];
