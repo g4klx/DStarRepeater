@@ -16,6 +16,8 @@
  *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#include <stdexcept>
+
 #include "Logger.h"
 
 CLogger::CLogger(const wxString& directory, const wxString& name) :
@@ -43,6 +45,8 @@ m_day(0)
 	bool ret = m_file->Open(m_fileName.GetFullPath(), wxT("a+t"));
 	if (!ret) {
 		wxLogError(wxT("Cannot open %s file for appending"), m_fileName.GetFullPath().c_str());
+		delete m_file;
+		throw std::runtime_error("Cannot open log file");
 		return;
 	}
 }
