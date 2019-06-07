@@ -138,6 +138,8 @@ void *CDStarRepeaterTXThread::Entry()
 			} else {
 				clock(ms);
 			}
+
+			wxLog::FlushActive();
 		}
 	}
 	catch (std::exception& e) {

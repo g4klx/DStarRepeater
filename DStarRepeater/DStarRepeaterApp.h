@@ -68,6 +68,7 @@ private:
 
 	wxString                    m_name;
 	bool                        m_nolog;
+	bool                        m_debug;
 	bool                        m_gui;
 	wxString                    m_logDir;
 	wxString                    m_confDir;

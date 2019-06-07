@@ -63,6 +63,7 @@ wxEND_EVENT_TABLE()
 
 const wxString NAME_PARAM = 		"Repeater Name";
 const wxString NOLOGGING_SWITCH =	"nolog";
+const wxString DEBUG_SWITCH =		"debug";
 const wxString GUI_SWITCH = 		"gui";
 const wxString LOGDIR_OPTION =		"logdir";
 const wxString CONFDIR_OPTION =		"confdir";
@@ -80,6 +81,7 @@ m_frame(NULL),
 #endif
 m_name(),
 m_nolog(false),
+m_debug(false),
 m_gui(false),
 m_logDir(),
 m_confDir(),
@@ -120,6 +122,14 @@ bool CDStarRepeaterApp::OnInit()
 		try {
 			CLogger* log = new CLogger(m_logDir, logBaseName);
 			wxLog::SetActiveTarget(log);
+
+			if (m_debug) {
+				wxLog::SetVerbose(true);
+				wxLog::SetLogLevel(wxLOG_Debug);
+			} else {
+				wxLog::SetVerbose(false);
+				wxLog::SetLogLevel(wxLOG_Message);
+			}
 		} catch ( const std::runtime_error& e ) {
 			wxLog::SetActiveTarget(new wxLogStderr());
 			wxLogError("Could not open log file, logging to stderr");
@@ -218,6 +228,7 @@ int CDStarRepeaterApp::OnExit()
 void CDStarRepeaterApp::OnInitCmdLine(wxCmdLineParser& parser)
 {
 	parser.AddSwitch(NOLOGGING_SWITCH, wxEmptyString, wxEmptyString, wxCMD_LINE_PARAM_OPTIONAL);
+	parser.AddSwitch(DEBUG_SWITCH,     wxEmptyString, wxEmptyString, wxCMD_LINE_PARAM_OPTIONAL);
 	parser.AddSwitch(GUI_SWITCH,       wxEmptyString, wxEmptyString, wxCMD_LINE_PARAM_OPTIONAL);
 	parser.AddOption(LOGDIR_OPTION,    wxEmptyString, wxEmptyString, wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL);
 	parser.AddOption(CONFDIR_OPTION,   wxEmptyString, wxEmptyString, wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL);
@@ -233,6 +244,7 @@ bool CDStarRepeaterApp::OnCmdLineParsed(wxCmdLineParser& parser)
 		return false;
 
 	m_nolog = parser.Found(NOLOGGING_SWITCH);
+	m_debug = parser.Found(DEBUG_SWITCH);
 	m_gui   = parser.Found(GUI_SWITCH);
 
 	wxString logDir;
