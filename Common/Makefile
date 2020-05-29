@@ -7,8 +7,9 @@ OBJECTS = AMBEFEC.o AnnouncementUnit.o ArduinoController.o BeaconUnit.o Callsign
 	  SlowDataDecoder.o SlowDataEncoder.o SoundCardController.o SoundCardReaderWriter.o SplitController.o TCPReaderWriter.o \
 	  Timer.o UDPReaderWriter.o UDRCController.o URIUSBController.o Utils.o
 
-.PHONY: all
-all:		Common.a
+.PHONY: all clean
+
+all: Common.a
 
 Common.a:	$(OBJECTS)
 		$(AR) rcs Common.a $(OBJECTS)
@@ -19,7 +20,6 @@ Common.a:	$(OBJECTS)
 		$(CXX) -DwxUSE_GUI=0 $(CFLAGS) -c -o $@ $<
 		$(CXX) -MM -DwxUSE_GUI=0 $(CFLAGS) $< > $*.d
 
-.PHONY: clean
 clean:
 		$(RM) Common.a *.o *.d *.bak *~
 

@@ -1,7 +1,9 @@
 OBJECTS = DStarRepeaterApp.o DStarRepeaterFrame.o DStarRepeaterLogRedirect.o DStarRepeaterRXThread.o DStarRepeaterStatusData.o \
 	  DStarRepeaterThread.o DStarRepeaterTRXThread.o DStarRepeaterTXRXThread.o DStarRepeaterTXThread.o
 
-all:		dstarrepeater
+.PHONY: install clean
+
+all: dstarrepeater
 
 dstarrepeater:	$(OBJECTS) ../Common/Common.a ../GUICommon/GUICommon.a
 		$(CXX) $(OBJECTS) ../Common/Common.a ../GUICommon/GUICommon.a $(LDFLAGS) $(GUILIBS) -o dstarrepeater
@@ -10,11 +12,9 @@ dstarrepeater:	$(OBJECTS) ../Common/Common.a ../GUICommon/GUICommon.a
 		$(CXX) $(CFLAGS) -I../Common -I../GUICommon -c -o $@ $<
 		$(CXX) -MM $(CFLAGS) -I../Common -I../GUICommon $< > $*.d
 
-.PHONY: install
 install:
-		install -g bin -o root -m 0775 dstarrepeater $(BINDIR)
+		install -g root -o root -m 0755 dstarrepeater $(DESTDIR)$(BINDIR)
 
-.PHONY: clean
 clean:
 		$(RM) dstarrepeater *.o *.d *.bak *~
 
