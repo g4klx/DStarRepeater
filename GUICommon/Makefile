@@ -1,6 +1,6 @@
 OBJECTS = AddressTextCtrl.o CallsignTextCtrl.o MessageTextCtrl.o PortTextCtrl.o RestrictedTextCtrl.o
 
-.PHONY: all
+.PHONY: all clean
 all:		GUICommon.a
 
 GUICommon.a:	$(OBJECTS)
@@ -12,7 +12,6 @@ GUICommon.a:	$(OBJECTS)
 		$(CXX) $(CFLAGS) -c -o $@ $<
 		$(CXX) -MM $(CFLAGS) $< > $*.d
 
-.PHONY: clean
 clean:
 		$(RM) GUICommon.a *.o *.d *.bak *~
 

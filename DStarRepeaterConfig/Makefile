@@ -5,8 +5,8 @@ OBJECTS = DStarRepeaterConfigActiveHangSet.o DStarRepeaterConfigAnnouncementSet.
 	  DStarRepeaterConfigIcomSet.o DStarRepeaterConfigMMDVMSet.o DStarRepeaterConfigModemSet.o DStarRepeaterConfigNetworkSet.o \
 	  DStarRepeaterConfigSoundCardSet.o DStarRepeaterConfigSplitSet.o DStarRepeaterConfigTimesSet.o
 
-.PHONY: all
-all:		dstarrepeaterconfig
+.PHONY: all install clean
+all: dstarrepeaterconfig
 
 dstarrepeaterconfig:	$(OBJECTS) ../GUICommon/GUICommon.a ../Common/Common.a
 		$(CXX) $(OBJECTS) ../GUICommon/GUICommon.a ../Common/Common.a $(LDFLAGS) $(GUILIBS) -o dstarrepeaterconfig
@@ -17,11 +17,9 @@ dstarrepeaterconfig:	$(OBJECTS) ../GUICommon/GUICommon.a ../Common/Common.a
 		$(CXX) $(CFLAGS) -I../GUICommon -I../Common -c -o $@ $<
 		$(CXX) -MM $(CFLAGS) -I../GUICommon -I../Common $< > $*.d
 
-.PHONY: install
 install:
-		install -g bin -o root -m 0775 dstarrepeaterconfig $(BINDIR)
+		install -g root -o root -m 0755 dstarrepeaterconfig $(DESTDIR)$(BINDIR)
 
-.PHONY: install
 clean:
 		$(RM) dstarrepeaterconfig *.o *.d *.bak *~
 
