@@ -570,7 +570,7 @@ RESP_TYPE_MMDVM CMMDVMController::getResponse(unsigned char *buffer, unsigned in
 
 	length = buffer[1U];
 
-	if (length >= 100U) {
+	if (length >= BUFFER_LENGTH) {
 		wxLogError(wxT("Invalid data received from the MMDVM"));
 		CUtils::dump(wxT("Data"), buffer, 2U);
 		return RTDVM_TIMEOUT;
