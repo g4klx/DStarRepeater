@@ -51,6 +51,9 @@ m_ambeBits(1U),
 m_ambeErrors(0U),
 m_lastAMBEBits(0U),
 m_lastAMBEErrors(0U)
+#if defined(MQTT)
+,m_mqttStatusTimer(1000U, 1U)		// 1s
+#endif
 {
 	setRadioState(DSRXS_LISTENING);
 }
@@ -70,6 +73,9 @@ void *CDStarRepeaterRXThread::Entry()
 		return NULL;
 
 	m_registerTimer.start(10U);
+#if defined(MQTT)
+	m_mqttStatusTimer.start();
+#endif
 
 	wxString hardware = m_type;
 	int n = hardware.Find(wxT(' '));
@@ -93,6 +99,25 @@ void *CDStarRepeaterRXThread::Entry()
 				m_protocolHandler->writeRegister();
 				m_registerTimer.start(30U);
 			}
+
+#if defined(MQTT)
+			// Publish status to MQTT every second
+			if (m_mqttStatusTimer.hasExpired()) {
+				if (g_mqtt != NULL) {
+					CDStarRepeaterStatusData* status = getStatus();
+					std::string json = status->toJSON();
+					g_mqtt->publish("status", json.c_str());
+					delete status;
+
+					// Publish BER for Display-Driver during active RF
+					if (m_rptState == DSRS_VALID && m_ambeBits > 0U) {
+						float ber = float(m_ambeErrors * 100U) / float(m_ambeBits);
+						mqttPublishBER(ber);
+					}
+				}
+				m_mqttStatusTimer.start();
+			}
+#endif
 
 			unsigned long ms = stopWatch.Time();
 			if (ms < CYCLE_TIME) {
@@ -220,6 +245,10 @@ void CDStarRepeaterRXThread::receiveModem()
 					::memcpy(data, END_PATTERN_BYTES, DV_FRAME_LENGTH_BYTES);
 					processRadioFrame(data, FRAME_END);
 					setRadioState(DSRXS_LISTENING);
+#if defined(MQTT)
+					mqttPublishDStarEnd();
+					mqttPublishIdle();
+#endif
 					endOfRadioData();
 				}
 				break;
@@ -357,6 +386,11 @@ bool CDStarRepeaterRXThread::processRadioHeader(CHeaderData* header)
 	delete m_rxHeader;
 	m_rxHeader = header;
 
+#if defined(MQTT)
+	mqttPublishDStarStart(m_rxHeader->getMyCall1(), m_rxHeader->getMyCall2(),
+		m_rxHeader->getYourCall(), m_rxHeader->getRptCall2(), "rf");
+#endif
+
 	CHeaderData netHeader(*m_rxHeader);
 	netHeader.setRptCall1(m_rxHeader->getRptCall2());
 	netHeader.setRptCall2(m_rxHeader->getRptCall1());
@@ -444,6 +478,9 @@ CDStarRepeaterStatusData* CDStarRepeaterRXThread::getStatus()
 void CDStarRepeaterRXThread::clock(unsigned int ms)
 {
 	m_registerTimer.clock(ms);
+#if defined(MQTT)
+	m_mqttStatusTimer.clock(ms);
+#endif
 }
 
 void CDStarRepeaterRXThread::shutdown()

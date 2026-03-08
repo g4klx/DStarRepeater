@@ -36,6 +36,9 @@
 #include "AMBEFEC.h"
 #include "Timer.h"
 #include "Utils.h"
+#if defined(MQTT)
+#include "MQTTPublisher.h"
+#endif
 
 #include <wx/wx.h>
 #include <wx/regex.h>
@@ -184,6 +187,10 @@ private:
 	bool                       m_blanking;
 	bool                       m_recording;
 	bool                       m_deleting;
+
+#if defined(MQTT)
+	CTimer                     m_mqttStatusTimer;
+#endif
 
 	void receiveHeader(CHeaderData* header);
 	void receiveRadioData(unsigned char* data, unsigned int length);

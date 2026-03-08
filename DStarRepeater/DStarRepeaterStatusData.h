@@ -24,6 +24,10 @@
 
 #include <wx/wx.h>
 
+#if defined(MQTT)
+#include <string>
+#endif
+
 class CDStarRepeaterStatusData {
 public:
 	CDStarRepeaterStatusData(const wxString& myCall1, const wxString& myCall2, const wxString& yourCall,
@@ -71,6 +75,10 @@ public:
 	wxString      getStatus3() const;
 	wxString      getStatus4() const;
 	wxString      getStatus5() const;
+
+#if defined(MQTT)
+	std::string   toJSON() const;
+#endif
 
 private:
 	wxString        m_myCall1;

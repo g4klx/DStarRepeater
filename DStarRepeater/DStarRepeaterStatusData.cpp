@@ -18,6 +18,10 @@
 
 #include "DStarRepeaterStatusData.h"
 
+#if defined(MQTT)
+#include <cstdio>
+#endif
+
 CDStarRepeaterStatusData::CDStarRepeaterStatusData(const wxString& myCall1, const wxString& myCall2,
 													 const wxString& yourCall, const wxString& rptCall1,
 													 const wxString& rptCall2, unsigned char flag1,
@@ -197,3 +201,61 @@ wxString CDStarRepeaterStatusData::getStatus5() const
 {
 	return m_status5;
 }
+
+#if defined(MQTT)
+static const char* rptStateToString(DSTAR_RPT_STATE state)
+{
+	switch (state) {
+		case DSRS_SHUTDOWN:     return "shutdown";
+		case DSRS_LISTENING:    return "listening";
+		case DSRS_VALID:        return "valid";
+		case DSRS_VALID_WAIT:   return "valid_wait";
+		case DSRS_INVALID:      return "invalid";
+		case DSRS_INVALID_WAIT: return "invalid_wait";
+		case DSRS_TIMEOUT:      return "timeout";
+		case DSRS_TIMEOUT_WAIT: return "timeout_wait";
+		case DSRS_NETWORK:      return "network";
+		default:                return "unknown";
+	}
+}
+
+static const char* rxStateToString(DSTAR_RX_STATE state)
+{
+	switch (state) {
+		case DSRXS_LISTENING:         return "listening";
+		case DSRXS_PROCESS_DATA:      return "process_data";
+		case DSRXS_PROCESS_SLOW_DATA: return "process_slow_data";
+		default:                      return "unknown";
+	}
+}
+
+std::string CDStarRepeaterStatusData::toJSON() const
+{
+	char buffer[1024];
+	::snprintf(buffer, sizeof(buffer),
+		"{\"myCall1\":\"%s\",\"myCall2\":\"%s\","
+		"\"yourCall\":\"%s\",\"rptCall1\":\"%s\",\"rptCall2\":\"%s\","
+		"\"tx\":%s,\"rxState\":\"%s\",\"rptState\":\"%s\","
+		"\"ber\":%.1f,"
+		"\"text\":\"%s\","
+		"\"status1\":\"%s\",\"status2\":\"%s\",\"status3\":\"%s\","
+		"\"status4\":\"%s\",\"status5\":\"%s\"}",
+		(const char*)m_myCall1.mb_str(),
+		(const char*)m_myCall2.mb_str(),
+		(const char*)m_yourCall.mb_str(),
+		(const char*)m_rptCall1.mb_str(),
+		(const char*)m_rptCall2.mb_str(),
+		m_tx ? "true" : "false",
+		rxStateToString(m_rxState),
+		rptStateToString(m_rptState),
+		m_percent,
+		(const char*)m_text.mb_str(),
+		(const char*)m_status1.mb_str(),
+		(const char*)m_status2.mb_str(),
+		(const char*)m_status3.mb_str(),
+		(const char*)m_status4.mb_str(),
+		(const char*)m_status5.mb_str());
+
+	return std::string(buffer);
+}
+#endif

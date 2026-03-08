@@ -98,6 +98,11 @@ public:
 	void getIcom(wxString& port) const;
 	void setIcom(const wxString& port);
 
+#if defined(MQTT)
+	void getMQTT(wxString& host, unsigned int& port, bool& auth, wxString& username, wxString& password, unsigned int& keepalive, wxString& name) const;
+	void setMQTT(const wxString& host, unsigned int port, bool auth, const wxString& username, const wxString& password, unsigned int keepalive, const wxString& name);
+#endif
+
 	bool write();
 
 private:
@@ -244,6 +249,17 @@ private:
 
 	// Icom Access Point/Terminal Mode
 	wxString      m_icomPort;
+
+#if defined(MQTT)
+	// MQTT
+	wxString      m_mqttHost;
+	unsigned int  m_mqttPort;
+	bool          m_mqttAuth;
+	wxString      m_mqttUsername;
+	wxString      m_mqttPassword;
+	unsigned int  m_mqttKeepalive;
+	wxString      m_mqttName;
+#endif
 };
 
 #endif

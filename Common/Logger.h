@@ -23,6 +23,12 @@
 #include <wx/ffile.h>
 #include <wx/filename.h>
 
+#if defined(MQTT)
+class CMQTTConnection;
+extern CMQTTConnection* g_mqtt;
+extern unsigned int g_mqttLevel;
+#endif
+
 class CLogger : public wxLog {
 public:
 	CLogger(const wxString& directory, const wxString& name);

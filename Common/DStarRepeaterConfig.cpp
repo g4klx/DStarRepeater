@@ -265,6 +265,24 @@ const unsigned int    DEFAULT_SPLIT_TIMEOUT      = 0U;
 
 const wxString        DEFAULT_ICOM_PORT          = wxEmptyString;
 
+#if defined(MQTT)
+const wxString  KEY_MQTT_HOST      = wxT("mqttHost");
+const wxString  KEY_MQTT_PORT      = wxT("mqttPort");
+const wxString  KEY_MQTT_AUTH      = wxT("mqttAuth");
+const wxString  KEY_MQTT_USERNAME  = wxT("mqttUsername");
+const wxString  KEY_MQTT_PASSWORD  = wxT("mqttPassword");
+const wxString  KEY_MQTT_KEEPALIVE = wxT("mqttKeepalive");
+const wxString  KEY_MQTT_NAME      = wxT("mqttName");
+
+const wxString        DEFAULT_MQTT_HOST      = wxT("127.0.0.1");
+const unsigned int    DEFAULT_MQTT_PORT      = 1883U;
+const bool            DEFAULT_MQTT_AUTH      = false;
+const wxString        DEFAULT_MQTT_USERNAME  = wxEmptyString;
+const wxString        DEFAULT_MQTT_PASSWORD  = wxEmptyString;
+const unsigned int    DEFAULT_MQTT_KEEPALIVE = 60U;
+const wxString        DEFAULT_MQTT_NAME      = wxT("dstar-repeater");
+#endif
+
 #if defined(__WINDOWS__)
 
 CDStarRepeaterConfig::CDStarRepeaterConfig(wxConfigBase* config, const wxString& dir, const wxString& configName, const wxString& name) :
@@ -389,6 +407,15 @@ m_splitTXNames(),
 m_splitRXNames(),
 m_splitTimeout(DEFAULT_SPLIT_TIMEOUT),
 m_icomPort(DEFAULT_ICOM_PORT)
+#if defined(MQTT)
+,m_mqttHost(DEFAULT_MQTT_HOST),
+m_mqttPort(DEFAULT_MQTT_PORT),
+m_mqttAuth(DEFAULT_MQTT_AUTH),
+m_mqttUsername(DEFAULT_MQTT_USERNAME),
+m_mqttPassword(DEFAULT_MQTT_PASSWORD),
+m_mqttKeepalive(DEFAULT_MQTT_KEEPALIVE),
+m_mqttName(DEFAULT_MQTT_NAME)
+#endif
 {
 	wxASSERT(config != NULL);
 	wxASSERT(!dir.IsEmpty());
@@ -825,6 +852,15 @@ m_splitTXNames(),
 m_splitRXNames(),
 m_splitTimeout(DEFAULT_SPLIT_TIMEOUT),
 m_icomPort(DEFAULT_ICOM_PORT)
+#if defined(MQTT)
+,m_mqttHost(DEFAULT_MQTT_HOST)
+,m_mqttPort(DEFAULT_MQTT_PORT)
+,m_mqttAuth(DEFAULT_MQTT_AUTH)
+,m_mqttUsername(DEFAULT_MQTT_USERNAME)
+,m_mqttPassword(DEFAULT_MQTT_PASSWORD)
+,m_mqttKeepalive(DEFAULT_MQTT_KEEPALIVE)
+,m_mqttName(DEFAULT_MQTT_NAME)
+#endif
 {
 	wxASSERT(!dir.IsEmpty());
 
@@ -856,16 +892,12 @@ m_icomPort(DEFAULT_ICOM_PORT)
 	for (wxString str = file.GetFirstLine();
 	     !file.Eof();
 	     str = file.GetNextLine())  {
-		if (str.GetChar(0U) == wxT('#')) {
-			str = file.GetNextLine();
+		if (str.IsEmpty() || str.GetChar(0U) == wxT('#'))
 			continue;
-		}
 
 		int n = str.Find(wxT('='));
-		if (n == wxNOT_FOUND) {
-			str = file.GetNextLine();
+		if (n == wxNOT_FOUND)
 			continue;
-		}
 
 		wxString key = str.Left(n);
 		wxString val = str.Mid(n + 1U);
@@ -1158,6 +1190,25 @@ m_icomPort(DEFAULT_ICOM_PORT)
 			m_soundCardTXTail = (unsigned int)temp2;
 		} else if (key.IsSameAs(KEY_ICOM_PORT)) {
 			m_icomPort = val;
+#if defined(MQTT)
+		} else if (key.IsSameAs(KEY_MQTT_HOST)) {
+			m_mqttHost = val;
+		} else if (key.IsSameAs(KEY_MQTT_PORT)) {
+			val.ToULong(&temp2);
+			m_mqttPort = (unsigned int)temp2;
+		} else if (key.IsSameAs(KEY_MQTT_AUTH)) {
+			val.ToLong(&temp1);
+			m_mqttAuth = temp1 == 1L;
+		} else if (key.IsSameAs(KEY_MQTT_USERNAME)) {
+			m_mqttUsername = val;
+		} else if (key.IsSameAs(KEY_MQTT_PASSWORD)) {
+			m_mqttPassword = val;
+		} else if (key.IsSameAs(KEY_MQTT_KEEPALIVE)) {
+			val.ToULong(&temp2);
+			m_mqttKeepalive = (unsigned int)temp2;
+		} else if (key.IsSameAs(KEY_MQTT_NAME)) {
+			m_mqttName = val;
+#endif
 		} else if (key.IsSameAs(KEY_SPLIT_LOCALADDRESS)) {
 			m_splitLocalAddress = val;
 		} else if (key.IsSameAs(KEY_SPLIT_LOCALPORT)) {
@@ -1608,6 +1659,30 @@ void CDStarRepeaterConfig::setIcom(const wxString& port)
 	m_icomPort = port;
 }
 
+#if defined(MQTT)
+void CDStarRepeaterConfig::getMQTT(wxString& host, unsigned int& port, bool& auth, wxString& username, wxString& password, unsigned int& keepalive, wxString& name) const
+{
+	host      = m_mqttHost;
+	port      = m_mqttPort;
+	auth      = m_mqttAuth;
+	username  = m_mqttUsername;
+	password  = m_mqttPassword;
+	keepalive = m_mqttKeepalive;
+	name      = m_mqttName;
+}
+
+void CDStarRepeaterConfig::setMQTT(const wxString& host, unsigned int port, bool auth, const wxString& username, const wxString& password, unsigned int keepalive, const wxString& name)
+{
+	m_mqttHost      = host;
+	m_mqttPort      = port;
+	m_mqttAuth      = auth;
+	m_mqttUsername  = username;
+	m_mqttPassword  = password;
+	m_mqttKeepalive = keepalive;
+	m_mqttName      = name;
+}
+#endif
+
 bool CDStarRepeaterConfig::write()
 {
 #if defined(__WINDOWS__)
@@ -1898,6 +1973,16 @@ bool CDStarRepeaterConfig::write()
 	buffer.Printf(wxT("%s=%u"),   KEY_SOUNDCARD_TXTAIL.c_str(),   m_soundCardTXTail);  file.AddLine(buffer);
 
 	buffer.Printf(wxT("%s=%s"),   KEY_ICOM_PORT.c_str(),          m_icomPort.c_str()); file.AddLine(buffer);
+
+#if defined(MQTT)
+	buffer.Printf(wxT("%s=%s"),   KEY_MQTT_HOST.c_str(),      m_mqttHost.c_str());      file.AddLine(buffer);
+	buffer.Printf(wxT("%s=%u"),   KEY_MQTT_PORT.c_str(),      m_mqttPort);               file.AddLine(buffer);
+	buffer.Printf(wxT("%s=%d"),   KEY_MQTT_AUTH.c_str(),       m_mqttAuth ? 1 : 0);      file.AddLine(buffer);
+	buffer.Printf(wxT("%s=%s"),   KEY_MQTT_USERNAME.c_str(),   m_mqttUsername.c_str());   file.AddLine(buffer);
+	buffer.Printf(wxT("%s=%s"),   KEY_MQTT_PASSWORD.c_str(),   m_mqttPassword.c_str());   file.AddLine(buffer);
+	buffer.Printf(wxT("%s=%u"),   KEY_MQTT_KEEPALIVE.c_str(),  m_mqttKeepalive);          file.AddLine(buffer);
+	buffer.Printf(wxT("%s=%s"),   KEY_MQTT_NAME.c_str(),       m_mqttName.c_str());       file.AddLine(buffer);
+#endif
 
 	buffer.Printf(wxT("%s=%s"),   KEY_SPLIT_LOCALADDRESS.c_str(), m_splitLocalAddress.c_str()); file.AddLine(buffer);
 	buffer.Printf(wxT("%s=%u"),   KEY_SPLIT_LOCALPORT.c_str(),    m_splitLocalPort);            file.AddLine(buffer);
