@@ -24,6 +24,9 @@
 #include "HeaderData.h"
 #include "AMBEFEC.h"
 #include "Timer.h"
+#if defined(MQTT)
+#include "MQTTPublisher.h"
+#endif
 
 #include <wx/wx.h>
 
@@ -80,6 +83,10 @@ private:
 	unsigned int               m_ambeErrors;
 	unsigned int               m_lastAMBEBits;
 	unsigned int               m_lastAMBEErrors;
+
+#if defined(MQTT)
+	CTimer                     m_mqttStatusTimer;
+#endif
 
 	void receiveHeader(CHeaderData* header);
 	void receiveRadioData(unsigned char* data, unsigned int length);

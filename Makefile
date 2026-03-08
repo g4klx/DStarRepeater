@@ -16,7 +16,12 @@ else ifeq ($(BUILD), release)
 endif
 export GUILIBS := $(shell wx-config --libs adv,core,base) -lasound
 export LIBS    := $(shell wx-config --libs base) -lasound -lusb-1.0
-export LDFLAGS := 
+export LDFLAGS :=
+
+ifeq ($(MQTT), 1)
+    export CFLAGS := $(CFLAGS) -DMQTT
+    export LIBS   := $(LIBS) -lmosquitto
+endif
 
 all: DStarRepeater/dstarrepeaterd DStarRepeaterConfig/dstarrepeaterconfig
 

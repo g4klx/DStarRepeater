@@ -24,6 +24,9 @@
 #include "HeaderData.h"
 #include "AMBEFEC.h"
 #include "Timer.h"
+#if defined(MQTT)
+#include "MQTTPublisher.h"
+#endif
 
 #include <wx/wx.h>
 
@@ -85,6 +88,10 @@ private:
 	wxStopWatch                m_packetTime;
 	unsigned int               m_packetCount;
 	unsigned int               m_packetSilence;
+
+#if defined(MQTT)
+	CTimer                     m_mqttStatusTimer;
+#endif
 
 	void transmitNetworkHeader(CHeaderData* header);
 	void transmitNetworkData();

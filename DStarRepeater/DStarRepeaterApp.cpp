@@ -52,6 +52,9 @@
 #include "DStarDefines.h"
 #include "Version.h"
 #include "Logger.h"
+#if defined(MQTT)
+#include "MQTTConnection.h"
+#endif
 
 wxIMPLEMENT_APP(CDStarRepeaterApp);
 
@@ -195,6 +198,37 @@ bool CDStarRepeaterApp::OnInit()
 	// Log the version of wxWidgets and the Operating System
 	wxLogInfo("Using wxWidgets %d.%d.%d on %s", wxMAJOR_VERSION, wxMINOR_VERSION, wxRELEASE_NUMBER, ::wxGetOsDescription().c_str());
 
+#if defined(MQTT)
+	wxString mqttHost, mqttUsername, mqttPassword, mqttName;
+	unsigned int mqttPort, mqttKeepalive;
+	bool mqttAuth;
+	m_config->getMQTT(mqttHost, mqttPort, mqttAuth, mqttUsername, mqttPassword, mqttKeepalive, mqttName);
+
+	if (!mqttHost.IsEmpty()) {
+		std::vector<std::pair<std::string, void (*)(const unsigned char*, unsigned int)>> subscriptions;
+
+		g_mqtt = new CMQTTConnection(
+			std::string(mqttHost.mb_str()),
+			(unsigned short)mqttPort,
+			std::string(mqttName.mb_str()),
+			mqttAuth,
+			std::string(mqttUsername.mb_str()),
+			std::string(mqttPassword.mb_str()),
+			subscriptions,
+			mqttKeepalive
+		);
+
+		bool ret = g_mqtt->open();
+		if (!ret) {
+			wxLogError("Unable to start MQTT connection to %s:%u", mqttHost.c_str(), mqttPort);
+			delete g_mqtt;
+			g_mqtt = NULL;
+		} else {
+			wxLogInfo("MQTT connected to %s:%u as %s", mqttHost.c_str(), mqttPort, mqttName.c_str());
+		}
+	}
+#endif
+
 	createThread();
 
 	return true;
@@ -207,6 +241,15 @@ int CDStarRepeaterApp::OnExit()
 	m_logChain->SetLog(NULL);
 
 	m_thread->kill();
+	m_thread->Wait();
+
+#if defined(MQTT)
+	if (g_mqtt != NULL) {
+		g_mqtt->close();
+		delete g_mqtt;
+		g_mqtt = NULL;
+	}
+#endif
 
 	delete m_config;
 

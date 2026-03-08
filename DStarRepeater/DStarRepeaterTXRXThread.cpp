@@ -73,6 +73,9 @@ m_headerTime(),
 m_packetTime(),
 m_packetCount(0U),
 m_packetSilence(0U)
+#if defined(MQTT)
+,m_mqttStatusTimer(1000U, 1U)		// 1s
+#endif
 {
 	m_networkQueue = new COutputQueue*[NETWORK_QUEUE_COUNT];
 	for (unsigned int i = 0U; i < NETWORK_QUEUE_COUNT; i++)
@@ -109,6 +112,9 @@ void *CDStarRepeaterTXRXThread::Entry()
 	m_heartbeatTimer.start();
 	m_statusTimer.start();
 	m_registerTimer.start(10U);
+#if defined(MQTT)
+	m_mqttStatusTimer.start();
+#endif
 
 	wxString hardware = m_type;
 	int n = hardware.Find(wxT(' '));
@@ -146,6 +152,25 @@ void *CDStarRepeaterTXRXThread::Entry()
 				m_controller->setHeartbeat();
 				m_heartbeatTimer.start();
 			}
+
+#if defined(MQTT)
+			// Publish status to MQTT every second
+			if (m_mqttStatusTimer.hasExpired()) {
+				if (g_mqtt != NULL) {
+					CDStarRepeaterStatusData* status = getStatus();
+					std::string json = status->toJSON();
+					g_mqtt->publish("status", json.c_str());
+					delete status;
+
+					// Publish BER for Display-Driver during active RF
+					if (m_rptState == DSRS_VALID && m_ambeBits > 0U) {
+						float ber = float(m_ambeErrors * 100U) / float(m_ambeBits);
+						mqttPublishBER(ber);
+					}
+				}
+				m_mqttStatusTimer.start();
+			}
+#endif
 
 			// Set the output state
 			if (m_tx || (m_activeHangTimer.isRunning() && !m_activeHangTimer.hasExpired())) {
@@ -330,6 +355,10 @@ void CDStarRepeaterTXRXThread::receiveModem()
 					::memcpy(data, END_PATTERN_BYTES, DV_FRAME_LENGTH_BYTES);
 					processRadioFrame(data, FRAME_END);
 					setRadioState(DSRXS_LISTENING);
+#if defined(MQTT)
+					mqttPublishDStarEnd();
+					mqttPublishIdle();
+#endif
 					endOfRadioData();
 				}
 				break;
@@ -549,6 +578,10 @@ void CDStarRepeaterTXRXThread::repeaterStateMachine()
 		wxLogMessage(wxT("Network watchdog has expired"));
 		// Send end of transmission data to the radio
 		m_networkQueue[m_writeNum]->addData(END_PATTERN_BYTES, DV_FRAME_LENGTH_BYTES, true);
+#if defined(MQTT)
+		mqttPublishDStarLost();
+		mqttPublishIdle();
+#endif
 		endOfNetworkData();
 	}
 }
@@ -632,6 +665,11 @@ bool CDStarRepeaterTXRXThread::processRadioHeader(CHeaderData* header)
 		delete m_rxHeader;
 		m_rxHeader = header;
 
+#if defined(MQTT)
+		mqttPublishDStarStart(m_rxHeader->getMyCall1(), m_rxHeader->getMyCall2(),
+			m_rxHeader->getYourCall(), m_rxHeader->getRptCall2(), "rf");
+#endif
+
 		CHeaderData netHeader(*m_rxHeader);
 		netHeader.setRptCall1(m_rxHeader->getRptCall2());
 		netHeader.setRptCall2(m_rxHeader->getRptCall1());
@@ -665,6 +703,11 @@ void CDStarRepeaterTXRXThread::processNetworkHeader(CHeaderData* header)
 
 	delete m_txHeader;
 	m_txHeader = header;
+
+#if defined(MQTT)
+	mqttPublishDStarStart(m_txHeader->getMyCall1(), m_txHeader->getMyCall2(),
+		m_txHeader->getYourCall(), m_txHeader->getRptCall2(), "net");
+#endif
 
 	m_networkSeqNo = 0U;
 	m_transmitting = true;
@@ -724,6 +767,10 @@ unsigned int CDStarRepeaterTXRXThread::processNetworkFrame(unsigned char* data, 
 	bool end = (seqNo & 0x40U) == 0x40U;
 	if (end) {
 		m_networkQueue[m_writeNum]->addData(END_PATTERN_BYTES, DV_FRAME_LENGTH_BYTES, true);
+#if defined(MQTT)
+		mqttPublishDStarEnd();
+		mqttPublishIdle();
+#endif
 		endOfNetworkData();
 		return 1U;
 	}
@@ -854,6 +901,9 @@ void CDStarRepeaterTXRXThread::clock(unsigned int ms)
 	m_activeHangTimer.clock(ms);
 	m_statusTimer.clock(ms);
 	m_heartbeatTimer.clock(ms);
+#if defined(MQTT)
+	m_mqttStatusTimer.clock(ms);
+#endif
 }
 
 void CDStarRepeaterTXRXThread::shutdown()

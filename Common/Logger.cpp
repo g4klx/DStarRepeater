@@ -18,6 +18,12 @@
 
 #include "Logger.h"
 
+#if defined(MQTT)
+#include "MQTTConnection.h"
+CMQTTConnection* g_mqtt = NULL;
+unsigned int g_mqttLevel = 2U;
+#endif
+
 CLogger::CLogger(const wxString& directory, const wxString& name) :
 wxLog(),
 m_name(name),
@@ -80,6 +86,22 @@ void CLogger::DoLogRecord(wxLogLevel level, const wxString& msg, const wxLogReco
 	message.Printf(wxT("%s: %04d-%02d-%02d %02d:%02d:%02d: %s\n"), letter.c_str(), tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec, msg.c_str());
 
 	writeLog(message.c_str(), info.timestamp);
+
+#if defined(MQTT)
+	if (g_mqtt != NULL && g_mqttLevel != 0U) {
+		unsigned int numLevel = 0U;
+		switch (level) {
+			case wxLOG_FatalError: numLevel = 6U; break;
+			case wxLOG_Error:      numLevel = 5U; break;
+			case wxLOG_Warning:    numLevel = 4U; break;
+			case wxLOG_Info:       numLevel = 3U; break;
+			case wxLOG_Message:    numLevel = 2U; break;
+			default:               numLevel = 1U; break;
+		}
+		if (numLevel >= g_mqttLevel)
+			g_mqtt->publish("log", (const char*)message.mb_str());
+	}
+#endif
 
 	if (level == wxLOG_FatalError)
 		::abort();
