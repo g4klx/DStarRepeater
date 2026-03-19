@@ -18,19 +18,31 @@
 
 #include "BeaconUnit.h"
 
-#include <wx/filename.h>
-#include <wx/textfile.h>
-#include <wx/tokenzr.h>
-#include <wx/ffile.h>
+#include <fstream>
+#include <sstream>
+#include <cstdio>
+#include <cassert>
+#include <cstring>
+#if defined(_WIN32)
+#include <io.h>
+#define access _access
+#define F_OK 0
+#define R_OK 4
+#else
+#include <unistd.h>
+#endif
 
+// Maximum beacon duration: 60 seconds at the D-Star frame rate.
 const unsigned int MAX_FRAMES = 60U * DSTAR_FRAMES_PER_SEC;
 
+// Number of silent AMBE frames prepended to the AMBE buffer and mapped to " ".
+// These create a short pause before and after each word/character.
 const unsigned int SILENCE_LENGTH = 10U;
 
-CBeaconUnit::CBeaconUnit(IBeaconCallback* handler, const wxString& callsign, const wxString& text, bool voice, TEXT_LANG language) :
-m_ambe(NULL),
+CBeaconUnit::CBeaconUnit(IBeaconCallback* handler, const std::string& callsign, const std::string& text, bool voice, TEXT_LANG language) :
+m_ambe(nullptr),
 m_ambeLength(0U),
-m_data(NULL),
+m_data(nullptr),
 m_dataLength(0U),
 m_index(),
 m_language(language),
@@ -43,69 +55,69 @@ m_seqNo(0U),
 m_time(),
 m_sending(false)
 {
-	wxASSERT(handler != NULL);
+	assert(handler != nullptr);
 
-	wxString slowData = text;
-	slowData.resize(20U, wxT(' '));
+	std::string slowData = text;
+	slowData.resize(20U, ' ');
 	m_encoder.setTextData(slowData);
 
-	m_data = new unsigned char[MAX_FRAMES * VOICE_FRAME_LENGTH_BYTES];
-	::memset(m_data, 0x00U, MAX_FRAMES * VOICE_FRAME_LENGTH_BYTES);
+	m_data = new unsigned char[MAX_FRAMES * DV_FRAME_LENGTH_BYTES];
+	::memset(m_data, 0x00U, MAX_FRAMES * DV_FRAME_LENGTH_BYTES);
 
 	if (!voice)
 		return;
 
-	wxString ambeFileName;
-	wxString indxFileName;
+	std::string ambeFileName;
+	std::string indxFileName;
 
 	switch (m_language) {
 		case TL_DEUTSCH:
-			ambeFileName = wxT("de_DE.ambe");
-			indxFileName = wxT("de_DE.indx");
+			ambeFileName = "de_DE.ambe";
+			indxFileName = "de_DE.indx";
 			break;
 		case TL_DANSK:
-			ambeFileName = wxT("dk_DK.ambe");
-			indxFileName = wxT("dk_DK.indx");
+			ambeFileName = "dk_DK.ambe";
+			indxFileName = "dk_DK.indx";
 			break;
 		case TL_ITALIANO:
-			ambeFileName = wxT("it_IT.ambe");
-			indxFileName = wxT("it_IT.indx");
+			ambeFileName = "it_IT.ambe";
+			indxFileName = "it_IT.indx";
 			break;
 		case TL_FRANCAIS:
-			ambeFileName = wxT("fr_FR.ambe");
-			indxFileName = wxT("fr_FR.indx");
+			ambeFileName = "fr_FR.ambe";
+			indxFileName = "fr_FR.indx";
 			break;
 		case TL_ESPANOL:
-			ambeFileName = wxT("es_ES.ambe");
-			indxFileName = wxT("es_ES.indx");
+			ambeFileName = "es_ES.ambe";
+			indxFileName = "es_ES.indx";
 			break;
 		case TL_SVENSKA:
-			ambeFileName = wxT("se_SE.ambe");
-			indxFileName = wxT("se_SE.indx");
+			ambeFileName = "se_SE.ambe";
+			indxFileName = "se_SE.indx";
 			break;
 		case TL_POLSKI:
-			ambeFileName = wxT("pl_PL.ambe");
-			indxFileName = wxT("pl_PL.indx");
+			ambeFileName = "pl_PL.ambe";
+			indxFileName = "pl_PL.indx";
 			break;
 		case TL_ENGLISH_US:
-			ambeFileName = wxT("en_US.ambe");
-			indxFileName = wxT("en_US.indx");
+			ambeFileName = "en_US.ambe";
+			indxFileName = "en_US.indx";
 			break;
 		case TL_NORSK:
-			ambeFileName = wxT("no_NO.ambe");
-			indxFileName = wxT("no_NO.indx");
+			ambeFileName = "no_NO.ambe";
+			indxFileName = "no_NO.indx";
 			break;
 //		case TL_NEDERLANDS_NL:
-//			ambeFileName = wxT("nl_NL.ambe");
-//			indxFileName = wxT("nl_NL.indx");
+//			ambeFileName = "nl_NL.ambe";
+//			indxFileName = "nl_NL.indx";
 //			break;
 //		case TL_NEDERLANDS_BE:
-//			ambeFileName = wxT("nl_BE.ambe");
-//			indxFileName = wxT("nl_BE.indx");
+//			ambeFileName = "nl_BE.ambe";
+//			indxFileName = "nl_BE.indx";
 //			break;
 		default:
-			ambeFileName = wxT("en_GB.ambe");
-			indxFileName = wxT("en_GB.indx");
+			ambeFileName = "en_GB.ambe";
+			indxFileName = "en_GB.indx";
 			break;
 	}
 
@@ -131,14 +143,14 @@ void CBeaconUnit::sendBeacon()
 
 	m_sending = true;
 
-	m_time.Start();
+	m_time = std::chrono::steady_clock::now();
 
 	m_in         = 0U;
 	m_out        = 0U;
 	m_seqNo      = 0U;
 	m_dataLength = 0U;
 
-	if (m_ambe == NULL) {
+	if (m_ambe == nullptr) {
 		for (unsigned int i = 0U; i < 21U; i++) {
 			unsigned char buffer[DV_FRAME_LENGTH_BYTES];
 
@@ -160,17 +172,17 @@ void CBeaconUnit::sendBeacon()
 			m_in++;
 		}
 	} else {
-		lookup(wxT(" "));
-		lookup(wxT(" "));
-		lookup(wxT(" "));
-		lookup(wxT(" "));
+		lookup(" ");
+		lookup(" ");
+		lookup(" ");
+		lookup(" ");
 
 		spellCallsign(m_callsign);
-	
-		lookup(wxT(" "));
-		lookup(wxT(" "));
-		lookup(wxT(" "));
-		lookup(wxT(" "));
+
+		lookup(" ");
+		lookup(" ");
+		lookup(" ");
+		lookup(" ");
 	}
 }
 
@@ -179,7 +191,10 @@ void CBeaconUnit::clock()
 	if (!m_sending)
 		return;
 
-	unsigned int needed = m_time.Time() / DSTAR_FRAME_TIME_MS;
+	// Calculate how many frames should have been sent by now based on elapsed
+	// wall-clock time, then dispatch any that haven't been sent yet.  This
+	// paces output at exactly the D-Star air rate without sleeping.
+	unsigned int needed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_time).count() / DSTAR_FRAME_TIME_MS;
 
 	while (m_out < needed) {
 		m_handler->transmitBeaconData(m_data + m_out * DV_FRAME_LENGTH_BYTES, DV_FRAME_LENGTH_BYTES, false);
@@ -195,13 +210,15 @@ void CBeaconUnit::clock()
 	}
 }
 
-bool CBeaconUnit::lookup(const wxString &id)
+bool CBeaconUnit::lookup(const std::string& id)
 {
-	CIndexRecord* info = m_index[id];
-	if (info == NULL) {
-		// wxLogError(wxT("Cannot find the AMBE index for *%s*"), id.c_str());
+	CIndexList_t::iterator it = m_index.find(id);
+	if (it == m_index.end() || it->second == nullptr) {
+		// Cannot find the AMBE index for this id
 		return false;
 	}
+
+	CIndexRecord* info = it->second;
 
 	unsigned int  start = info->getStart();
 	unsigned int length = info->getLength();
@@ -232,82 +249,81 @@ bool CBeaconUnit::lookup(const wxString &id)
 	return true;
 }
 
-void CBeaconUnit::spellCallsign(const wxString &callsign)
+void CBeaconUnit::spellCallsign(const std::string& callsign)
 {
-	unsigned int length = callsign.Len();
+	unsigned int length = callsign.length();
 
 	for (unsigned int i = 0U; i < (length - 1U); i++) {
-		wxString c = callsign.Mid(i, 1U);
+		std::string c = callsign.substr(i, 1U);
 
-		if (!c.IsSameAs(wxT(" ")))
+		if (c != " ")
 			lookup(c);
 	}
 
-	wxChar c = callsign.GetChar(length - 1U);
+	char c = callsign[length - 1U];
 
 	switch (c) {
-		case wxT('A'):
-			lookup(wxT("alpha"));
+		case 'A':
+			lookup("alpha");
 			break;
-		case wxT('B'):
-			lookup(wxT("bravo"));
+		case 'B':
+			lookup("bravo");
 			break;
-		case wxT('C'):
-			lookup(wxT("charlie"));
+		case 'C':
+			lookup("charlie");
 			break;
-		case wxT('D'):
-			lookup(wxT("delta"));
+		case 'D':
+			lookup("delta");
 			break;
 		default:
-			lookup(wxString(c));
+			lookup(std::string(1, c));
 			break;
 	}
 }
 
-bool CBeaconUnit::readAMBE(const wxString& name)
+bool CBeaconUnit::readAMBE(const std::string& name)
 {
-	wxFileName fileName(wxFileName::GetHomeDir(), name);
-
-	if (!fileName.IsFileReadable()) {
-		wxLogMessage(wxT("File %s not readable"), fileName.GetFullPath().c_str());
-#if defined(__WINDOWS__)
-		fileName.Assign(::wxGetCwd(), name);
+#if defined(_WIN32)
+	const char* home = getenv("USERPROFILE");
 #else
-		fileName.Assign(wxT(DATA_DIR), name);
+	const char* home = getenv("HOME");
 #endif
-		if (!fileName.IsFileReadable()) {
-			wxLogMessage(wxT("File %s not readable"), fileName.GetFullPath().c_str());
+	std::string homePath = std::string(home != nullptr ? home : "") + "/" + name;
+	std::string filePath;
+
+	if (access(homePath.c_str(), R_OK) == 0) {
+		filePath = homePath;
+	} else {
+		std::string dataPath = std::string(DATA_DIR) + "/" + name;
+		if (access(dataPath.c_str(), R_OK) == 0) {
+			filePath = dataPath;
+		} else {
 			return false;
 		}
 	}
 
-	wxFFile file;
-
-	bool ret = file.Open(fileName.GetFullPath().c_str(), wxT("rb"));
-	if (!ret) {
-		wxLogMessage(wxT("Cannot open %s for reading"), fileName.GetFullPath().c_str());
+	FILE* file = ::fopen(filePath.c_str(), "rb");
+	if (file == nullptr)
 		return false;
-	}
-
-	wxLogMessage(wxT("Reading %s"), fileName.GetFullPath().c_str());
 
 	unsigned char buffer[VOICE_FRAME_LENGTH_BYTES];
 
-	size_t n = file.Read(buffer, 4U);
+	size_t n = ::fread(buffer, 1U, 4U, file);
 	if (n != 4U) {
-		wxLogMessage(wxT("Unable to read the header from %s"), fileName.GetFullPath().c_str());
-		file.Close();
+		::fclose(file);
 		return false;
 	}
 
 	if (::memcmp(buffer, "AMBE", 4U) != 0) {
-		wxLogMessage(wxT("Invalid header from %s"), fileName.GetFullPath().c_str());
-		file.Close();
+		::fclose(file);
 		return false;
 	}
 
-	// Length of the file minus the header
-	unsigned int length = file.Length() - 4U;
+	// Determine file length minus the 4-byte header
+	::fseek(file, 0L, SEEK_END);
+	long fileSize = ::ftell(file);
+	::fseek(file, 4L, SEEK_SET);
+	unsigned int length = (unsigned int)(fileSize - 4L);
 
 	// Hold the file data plus silence at the end
 	m_ambe = new unsigned char[length + SILENCE_LENGTH * VOICE_FRAME_LENGTH_BYTES];
@@ -318,77 +334,68 @@ bool CBeaconUnit::readAMBE(const wxString& name)
 	for (unsigned int i = 0U; i < SILENCE_LENGTH; i++, p += VOICE_FRAME_LENGTH_BYTES)
 		::memcpy(p, NULL_AMBE_DATA_BYTES, VOICE_FRAME_LENGTH_BYTES);
 
-	n = file.Read(p, length);
+	n = ::fread(p, 1U, length, file);
 	if (n != length) {
-		wxLogMessage(wxT("Unable to read the AMBE data from %s"), fileName.GetFullPath().c_str());
-		file.Close();
+		::fclose(file);
 		delete[] m_ambe;
-		m_ambe = NULL;
+		m_ambe = nullptr;
 		return false;
 	}
 
-	file.Close();
+	::fclose(file);
 
 	return true;
 }
 
-bool CBeaconUnit::readIndex(const wxString& name)
+bool CBeaconUnit::readIndex(const std::string& name)
 {
-	wxFileName fileName(wxFileName::GetHomeDir(), name);
-
-	if (!fileName.IsFileReadable()) {
-		wxLogMessage(wxT("File %s not readable"), fileName.GetFullPath().c_str());
-#if defined(__WINDOWS__)
-		fileName.Assign(::wxGetCwd(), name);
+#if defined(_WIN32)
+	const char* home = getenv("USERPROFILE");
 #else
-		fileName.Assign(wxT(DATA_DIR), name);
+	const char* home = getenv("HOME");
 #endif
-		if (!fileName.IsFileReadable()) {
-			wxLogMessage(wxT("File %s not readable"), fileName.GetFullPath().c_str());
+	std::string homePath = std::string(home != nullptr ? home : "") + "/" + name;
+	std::string filePath;
+
+	if (access(homePath.c_str(), R_OK) == 0) {
+		filePath = homePath;
+	} else {
+		std::string dataPath = std::string(DATA_DIR) + "/" + name;
+		if (access(dataPath.c_str(), R_OK) == 0) {
+			filePath = dataPath;
+		} else {
 			return false;
 		}
 	}
 
-	wxTextFile file;
-
-	bool ret = file.Open(fileName.GetFullPath());
-	if (!ret) {
-		wxLogMessage(wxT("Cannot open %s for reading"), fileName.GetFullPath().c_str());
+	std::ifstream file(filePath);
+	if (!file.is_open())
 		return false;
-	}
 
 	// Add a silence entry at the beginning
-	m_index[wxT(" ")] = new CIndexRecord(wxT(" "), 0U, SILENCE_LENGTH);
+	m_index[" "] = new CIndexRecord(" ", 0U, SILENCE_LENGTH);
 
-	wxLogMessage(wxT("Reading %s"), fileName.GetFullPath().c_str());
+	std::string line;
+	while (std::getline(file, line)) {
+		if (!line.empty() && line[0] != '#') {
+			std::istringstream iss(line);
+			std::string entryName, startTxt, lengthTxt;
+			iss >> entryName >> startTxt >> lengthTxt;
 
-	unsigned int nLines = file.GetLineCount();
+			if (!entryName.empty() && !startTxt.empty() && !lengthTxt.empty()) {
+				unsigned long start  = std::stoul(startTxt);
+				unsigned long length = std::stoul(lengthTxt);
 
-	for (unsigned int i = 0; i < nLines; i++) {
-		wxString line = file.GetLine(i);
-
-		if (line.length() > 0 && line.GetChar(0) != wxT('#')) {
-			wxStringTokenizer t(line, wxT(" \t\r\n"), wxTOKEN_STRTOK);
-			wxString name      = t.GetNextToken();
-			wxString startTxt  = t.GetNextToken();
-			wxString lengthTxt = t.GetNextToken();
-
-			if (!name.IsEmpty() && !startTxt.IsEmpty() && !lengthTxt.IsEmpty()) {
-				unsigned long start;
-				startTxt.ToULong(&start);
-
-				unsigned long length;
-				lengthTxt.ToULong(&length);
-
-				if (start >= m_ambeLength || (start + length) >= m_ambeLength)
-					wxLogError(wxT("The start or end for *%s* is out of range, start: %lu, end: %lu"), name.c_str(), start, start + length);
-				else
-					m_index[name] = new CIndexRecord(name, start + SILENCE_LENGTH, length);
+				if (start >= m_ambeLength || (start + length) >= m_ambeLength) {
+					// Out of range entry — skip silently
+				} else {
+					m_index[entryName] = new CIndexRecord(entryName, start + SILENCE_LENGTH, length);
+				}
 			}
 		}
 	}
 
-	file.Close();
+	file.close();
 
 	return true;
 }

@@ -25,8 +25,9 @@
 #include "RingBuffer.h"
 #include "Modem.h"
 #include "Utils.h"
+#include "StdCompat.h"
 
-#include <wx/wx.h>
+#include <string>
 
 enum RESP_TYPE_V3 {
 	RT3_TIMEOUT,
@@ -39,13 +40,21 @@ enum RESP_TYPE_V3 {
 	RT3_DATA
 };
 
+/*
+ * CDVRPTRV3Controller - Driver for DV-RPTR V3 boards.
+ *
+ * Functionally identical to CDVRPTRV2Controller; V3 uses the same ASCII "HEAD"
+ * protocol and the same CT_USB / CT_NETWORK connection type switching.
+ * The code is a parallel implementation maintained separately for V3 firmware
+ * compatibility.  See CDVRPTRV2Controller for full protocol documentation.
+ */
 class CDVRPTRV3Controller : public CModem {
 public:
-	CDVRPTRV3Controller(const wxString& port, const wxString& path, bool txInvert, unsigned int modLevel, bool duplex, const wxString& callsign, unsigned int txDelay);
-	CDVRPTRV3Controller(const wxString& address, unsigned int port, bool txInvert, unsigned int modLevel, bool duplex, const wxString& callsign, unsigned int txDelay);
+	// USB serial connection.
+	CDVRPTRV3Controller(const std::string& port, const std::string& path, bool txInvert, unsigned int modLevel, bool duplex, const std::string& callsign, unsigned int txDelay);
+	// TCP network connection.
+	CDVRPTRV3Controller(const std::string& address, unsigned int port, bool txInvert, unsigned int modLevel, bool duplex, const std::string& callsign, unsigned int txDelay);
 	virtual ~CDVRPTRV3Controller();
-
-	virtual void* Entry();
 
 	virtual bool start();
 
@@ -55,18 +64,20 @@ public:
 	virtual bool writeHeader(const CHeaderData& header);
 	virtual bool writeData(const unsigned char* data, unsigned int length, bool end);
 
-	virtual wxString getPath() const;
+	virtual std::string getPath() const;
 
 private:
+	void entry();
+
 	CONNECTION_TYPE            m_connection;
-	wxString                   m_usbPort;
-	wxString                   m_usbPath;
-	wxString                   m_address;
+	std::string                m_usbPort;
+	std::string                m_usbPath;
+	std::string                m_address;
 	unsigned int               m_port;
 	bool                       m_txInvert;
 	unsigned int               m_modLevel;
 	bool                       m_duplex;
-	wxString                   m_callsign;
+	std::string                m_callsign;
 	unsigned int               m_txDelay;
 	CSerialDataController*     m_usb;
 	CTCPReaderWriter*          m_network;

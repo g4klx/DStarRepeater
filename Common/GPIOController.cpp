@@ -15,6 +15,8 @@
 
 #include "GPIOController.h"
 
+#include <cstdio>
+
 CGPIOController::CGPIOController(unsigned int config) :
 m_config(config),
 m_outp1(false),
@@ -38,7 +40,7 @@ bool CGPIOController::open()
 {
 	bool ret = ::wiringPiSetup() != -1;
 	if (!ret) {
-		wxLogError(wxT("Unable to initialise wiringPi"));
+		::fprintf(stderr, "Unable to initialise wiringPi\n");
 		return false;
 	}
 
@@ -172,4 +174,3 @@ void CGPIOController::close()
 }
 
 #endif
-

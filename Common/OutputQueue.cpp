@@ -18,14 +18,16 @@
 
 #include "OutputQueue.h"
 
+#include <cassert>
+
 COutputQueue::COutputQueue(unsigned int space, unsigned int threshold) :
 m_data(space),
 m_threshold(threshold),
-m_header(NULL),
+m_header(nullptr),
 m_count(0U)
 {
-	wxASSERT(space > 0U);
-	wxASSERT(threshold > 0U);
+	assert(space > 0U);
+	assert(threshold > 0U);
 }
 
 COutputQueue::~COutputQueue()
@@ -35,7 +37,7 @@ COutputQueue::~COutputQueue()
 
 void COutputQueue::setHeader(CHeaderData* header)
 {
-	wxASSERT(header != NULL);
+	assert(header != nullptr);
 
 	delete m_header;
 
@@ -46,14 +48,14 @@ CHeaderData* COutputQueue::getHeader()
 {
 	CHeaderData* header = m_header;
 
-	m_header = NULL;
+	m_header = nullptr;
 
 	return header;
 }
 
 unsigned int COutputQueue::getData(unsigned char *data, unsigned int length, bool& end)
 {
-	wxASSERT(data != NULL);
+	assert(data != nullptr);
 
 	if (m_data.isEmpty()) {
 		end = false;
@@ -66,8 +68,6 @@ unsigned int COutputQueue::getData(unsigned char *data, unsigned int length, boo
 	end = hdr[0U] == 1U;
 
 	if (length < hdr[1U]) {
-		wxLogWarning(wxT("Output buffer is too short, %u < %u"), length, hdr[1U]);
-
 		unsigned int len = m_data.getData(data, length);
 
 		// Purge the excess data
@@ -84,11 +84,10 @@ unsigned int COutputQueue::getData(unsigned char *data, unsigned int length, boo
 
 unsigned int COutputQueue::addData(const unsigned char *data, unsigned int length, bool end)
 {
-	wxASSERT(data != NULL);
+	assert(data != nullptr);
 
 	bool ret = m_data.hasSpace(length + 2U);
 	if (!ret) {
-		// XXX wxLogWarning(wxT("Not enough space in the output queue"));
 		return 0U;
 	}
 
@@ -107,17 +106,17 @@ unsigned int COutputQueue::addData(const unsigned char *data, unsigned int lengt
 
 bool COutputQueue::headerReady() const
 {
-	return m_header != NULL && m_count >= m_threshold;
+	return m_header != nullptr && m_count >= m_threshold;
 }
 
 bool COutputQueue::dataReady() const
 {
-	return m_header == NULL && m_count >= m_threshold;
+	return m_header == nullptr && m_count >= m_threshold;
 }
 
 bool COutputQueue::isEmpty()
 {
-	return m_header == NULL && m_data.isEmpty();
+	return m_header == nullptr && m_data.isEmpty();
 }
 
 void COutputQueue::reset()
@@ -125,14 +124,14 @@ void COutputQueue::reset()
 	m_data.clear();
 
 	delete m_header;
-	m_header = NULL;
+	m_header = nullptr;
 
 	m_count = 0U;
 }
 
 void COutputQueue::setThreshold(unsigned int threshold)
 {
-	wxASSERT(threshold > 0U);
+	assert(threshold > 0U);
 
 	m_threshold = threshold;
 }

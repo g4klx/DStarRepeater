@@ -19,17 +19,19 @@
 #include "DStarDefines.h"
 #include "Modem.h"
 
+// Internal scratch buffer used by read() to hold one decoded message payload.
+// 200 bytes is large enough for RADIO_HEADER_LENGTH_BYTES (41) and a max DV frame.
 const unsigned int BUFFER_LENGTH = 200U;
 
 CModem::CModem() :
-wxThread(wxTHREAD_JOINABLE),
 m_rxData(1000U),
 m_mutex(),
 m_tx(false),
 m_stopped(false),
+m_thread(),
 m_readType(DSMTT_NONE),
 m_readLength(0U),
-m_readBuffer(NULL)
+m_readBuffer(nullptr)
 {
 	m_readBuffer = new unsigned char[BUFFER_LENGTH];
 }
@@ -51,8 +53,9 @@ DSMT_TYPE CModem::read()
 	if (m_rxData.isEmpty())
 		return DSMTT_NONE;
 
-	wxMutexLocker locker(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 
+	// Each ring-buffer message is framed as [type:1][length:1][payload:length].
 	unsigned char hdr[2U];
 	m_rxData.getData(hdr, 2U);
 
@@ -66,7 +69,7 @@ DSMT_TYPE CModem::read()
 CHeaderData* CModem::readHeader()
 {
 	if (m_readType != DSMTT_HEADER)
-		return NULL;
+		return nullptr;
 
 	return new CHeaderData(m_readBuffer, RADIO_HEADER_LENGTH_BYTES, false);
 }
@@ -89,6 +92,6 @@ void CModem::stop()
 {
 	m_stopped = true;
 
-	Wait();
+	if (m_thread.joinable())
+		m_thread.join();
 }
-

@@ -25,8 +25,9 @@
 #include "RingBuffer.h"
 #include "Modem.h"
 #include "Utils.h"
+#include "StdCompat.h"
 
-#include <wx/wx.h>
+#include <string>
 
 enum RESP_TYPE_V2 {
 	RT2_TIMEOUT,
@@ -39,13 +40,42 @@ enum RESP_TYPE_V2 {
 	RT2_DATA
 };
 
+/*
+ * CDVRPTRV2Controller - Driver for DV-RPTR V2 boards.
+ *
+ * Supports two physical connection types, selected by constructor:
+ *   CT_USB     - USB CDC-ACM serial port (same as V1).
+ *   CT_NETWORK - TCP socket (address + port); used for networked / remote modems.
+ *
+ * The CONNECTION_TYPE flag (m_connection) controls which of the two backing
+ * objects (m_usb / m_network) is used; readModem(), writeModem(), closeModem()
+ * dispatch through it uniformly so the rest of the logic is connection-agnostic.
+ *
+ * Protocol: ASCII-framed "HEAD" protocol (distinct from the binary DVRPTR protocol
+ * used by V1).  Each frame starts with the 4-byte magic "HEAD" followed by a
+ * 1-byte type character:
+ *   'X' - 105-byte control/header frame  (HEADX)
+ *   'Y' - 10-byte  space/status frame    (HEADY)
+ *   'Z' - 20-byte  voice data frame      (HEADZ)
+ * Frame subtypes are identified by 4 ASCII digits at bytes [5..8].
+ *
+ * On startup the driver sends a HEADX/9000 query to get the hardware serial,
+ * then HEADX/9001 to configure the modem (callsign, duplex, modLevel, txDelay).
+ * During operation the driver polls HEADY/9011 every 250ms to get TX buffer space.
+ *
+ * The header frame (HEADX/0002) also contains the first DV frame of the
+ * transmission (at byte offset 51), so the repeater receives both the D-Star
+ * header and the first voice frame in a single network packet.
+ *
+ * Reconnection works identically to V1: findPort() -> openModem() retried every 2s.
+ */
 class CDVRPTRV2Controller : public CModem {
 public:
-	CDVRPTRV2Controller(const wxString& port, const wxString& path, bool txInvert, unsigned int modLevel, bool duplex, const wxString& callsign, unsigned int txDelay);
-	CDVRPTRV2Controller(const wxString& address, unsigned int port, bool txInvert, unsigned int modLevel, bool duplex, const wxString& callsign, unsigned int txDelay);
+	// USB serial connection.
+	CDVRPTRV2Controller(const std::string& port, const std::string& path, bool txInvert, unsigned int modLevel, bool duplex, const std::string& callsign, unsigned int txDelay);
+	// TCP network connection.
+	CDVRPTRV2Controller(const std::string& address, unsigned int port, bool txInvert, unsigned int modLevel, bool duplex, const std::string& callsign, unsigned int txDelay);
 	virtual ~CDVRPTRV2Controller();
-
-	virtual void* Entry();
 
 	virtual bool start();
 
@@ -55,18 +85,20 @@ public:
 	virtual bool writeHeader(const CHeaderData& header);
 	virtual bool writeData(const unsigned char* data, unsigned int length, bool end);
 
-	virtual wxString getPath() const;
+	virtual std::string getPath() const;
 
 private:
+	void entry();
+
 	CONNECTION_TYPE            m_connection;
-	wxString                   m_usbPort;
-	wxString                   m_usbPath;
-	wxString                   m_address;
+	std::string                m_usbPort;
+	std::string                m_usbPath;
+	std::string                m_address;
 	unsigned int               m_port;
 	bool                       m_txInvert;
 	unsigned int               m_modLevel;
 	bool                       m_duplex;
-	wxString                   m_callsign;
+	std::string                m_callsign;
 	unsigned int               m_txDelay;
 	CSerialDataController*     m_usb;
 	CTCPReaderWriter*          m_network;

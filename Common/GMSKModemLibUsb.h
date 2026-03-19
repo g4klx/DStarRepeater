@@ -22,19 +22,34 @@
 #include "GMSKModem.h"
 #include "Utils.h"
 
-#include <wx/wx.h>
-#if defined(WIN32)
-#include <wx/dynlib.h>
-#if _MSC_VER == 1900
-#undef __USB_H__
-#include <lusb0_usb.h>
-#else
-#include "lusb0_usb.h"
-#endif
-#else
 #include <libusb-1.0/libusb.h>
-#endif
 
+/*
+ * CGMSKModemLibUsb - libusb implementation of IGMSKModem for GMSK USB modems.
+ *
+ * USB vendor ID: 0x04D8 (Microchip).  The address parameter is the USB product
+ * ID used to distinguish between multiple modems on the same host.
+ *
+ * All modem operations use USB control transfers (libusb_control_transfer).
+ * Request direction encoding:
+ *   0xC0 = device-to-host (IN):  GET_VERSION, GET_HEADER, GET_DATA,
+ *                                GET_AD_STATUS, GET_REMAINSPACE
+ *   0x40 = host-to-device (OUT): SET_AD_INIT, SET_PTT, PUT_DATA,
+ *                                SET_MyCALL, SET_YourCALL, SET_RPT1CALL,
+ *                                SET_RPT2CALL, SET_FLAGS, SET_MyCALL2
+ *
+ * The io() helper retries each control transfer up to 4 times on transient
+ * errors, returning -ENODEV (-19) immediately on device disconnect.
+ *
+ * DUTCH*Star firmware quirk (m_brokenSpace):
+ *   Some versions report an incorrect remaining-space value from GET_REMAINSPACE.
+ *   When detected by the firmware version string, the space check is bypassed
+ *   by treating hasSpace() as always returning STATE_TRUE.
+ *
+ * Data is transferred in GMSK_MODEM_DATA_LENGTH chunks.  Frames larger than
+ * one chunk are split across two sequential PUT_DATA transfers with a 3ms gap
+ * to give libusb recovery time between transfers.
+ */
 class CGMSKModemLibUsb : public IGMSKModem {
 public:
 	CGMSKModemLibUsb(unsigned int address);
@@ -54,32 +69,15 @@ public:
 	virtual int  writeData(unsigned char* data, unsigned int length);
 
 	virtual void close();
-#if defined(WIN32)
-	static char*           (*m_usbStrerror)();
-#endif
 
 private:
 	unsigned int             m_address;
-#if defined(WIN32)
-	struct usb_dev_handle*   m_dev;
-
-	static wxDynamicLibrary* m_library;
-	static bool              m_loaded;
-
-	static void            (*m_usbInit)();
-	static int             (*m_usbFindBusses)();
-	static int             (*m_usbFindDevices)();
-	static struct usb_bus* (*m_usbGetBusses)();
-	static usb_dev_handle* (*m_usbOpen)(struct usb_device*);
-	static int             (*m_usbSetConfiguration)(usb_dev_handle*, int);
-	static int             (*m_usbControlMsg)(usb_dev_handle*, int, int, int, int, unsigned char*, int, int);
-	static int             (*m_usbClose)(usb_dev_handle*);
-
-#else
 	libusb_context*          m_context;
 	libusb_device_handle*    m_dev;
 
-#endif
+	// Executes a USB control transfer, retrying up to 4 times on transient errors.
+	// requestType: 0xC0 = device-to-host, 0x40 = host-to-device.
+	// Returns byte count on success, negative libusb error code on failure.
 	int io(uint8_t requestType, uint8_t request, uint16_t value, uint16_t index, unsigned char* data, uint16_t length, unsigned int timeout);
 
 	bool                     m_brokenSpace;

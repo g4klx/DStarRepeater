@@ -28,23 +28,33 @@
 #include "MQTTPublisher.h"
 #endif
 
-#include <wx/wx.h>
+#include "StdCompat.h"
+#include <atomic>
 
+// CDStarRepeaterRXThread — receive-only repeater thread (MODE_RXONLY).
+//
+// Listens for RF transmissions, validates the header, counts AMBE BER, and
+// forwards every frame to the gateway via the protocol handler.  There is no
+// local transmit queue, no ack, no beacon, and no controller PTT.  The gateway
+// link is required (a protocol handler must be set before entry() will run).
+//
+// Compared with TRXThread the state machine is trivial: LISTENING ↔ VALID
+// with no timeout, ack-wait, or network states.
 class CDStarRepeaterRXThread : public IDStarRepeaterThread {
 public:
-	CDStarRepeaterRXThread(const wxString& type);
+	CDStarRepeaterRXThread(const std::string& type);
 	virtual ~CDStarRepeaterRXThread();
 
-	virtual void setCallsign(const wxString& callsign, const wxString& gateway, DSTAR_MODE mode, ACK_TYPE ack, bool restriction, bool rpt1Validation, bool dtmfBlanking, bool errorReply);
+	virtual void setCallsign(const std::string& callsign, const std::string& gateway, DSTAR_MODE mode, ACK_TYPE ack, bool restriction, bool rpt1Validation, bool dtmfBlanking, bool errorReply);
 	virtual void setProtocolHandler(CRepeaterProtocolHandler* handler, bool local);
 	virtual void setModem(CModem* modem);
 	virtual void setController(CExternalController* controller, unsigned int activeHangTime);
 	virtual void setTimes(unsigned int timeout, unsigned int ackTime);
-	virtual void setBeacon(unsigned int time, const wxString& text, bool voice, TEXT_LANG language);
-	virtual void setAnnouncement(bool enabled, unsigned int time, const wxString& recordRPT1, const wxString& recordRPT2, const wxString& deleteRPT1, const wxString& deleteRPT2);
+	virtual void setBeacon(unsigned int time, const std::string& text, bool voice, TEXT_LANG language);
+	virtual void setAnnouncement(bool enabled, unsigned int time, const std::string& recordRPT1, const std::string& recordRPT2, const std::string& deleteRPT1, const std::string& deleteRPT2);
 
 	virtual void setOutputs(bool out1, bool out2, bool out3, bool out4);
-	virtual void setLogging(bool logging, const wxString& dir);
+	virtual void setLogging(bool logging, const std::string& dir);
 	virtual void setWhiteList(CCallsignList* list);
 	virtual void setBlackList(CCallsignList* list);
 	virtual void setGreyList(CCallsignList* list);
@@ -52,21 +62,14 @@ public:
 	virtual void shutdown();
 	virtual void startup();
 
-	virtual void command1();
-	virtual void command2();
-	virtual void command3();
-	virtual void command4();
-	virtual void command5();
-	virtual void command6();
-
 	virtual CDStarRepeaterStatusData* getStatus();
 
 	virtual void kill();
 
-	virtual void *Entry();
+	virtual void entry();
 
 private:
-	wxString                   m_type;
+	std::string                m_type;
 	CModem*                    m_modem;
 	CRepeaterProtocolHandler*  m_protocolHandler;
 	CHeaderData*               m_rxHeader;
@@ -75,7 +78,7 @@ private:
 	DSTAR_RPT_STATE            m_rptState;
 	DSTAR_RX_STATE             m_rxState;
 	CSlowDataDecoder           m_slowDataDecoder;
-	bool                       m_killed;
+	std::atomic<bool>          m_killed;
 	CAMBEFEC                   m_ambe;
 	unsigned int               m_ambeFrames;
 	unsigned int               m_ambeSilence;

@@ -19,11 +19,11 @@
 #ifndef SerialPortSelector_H
 #define SerialPortSelector_H
 
-#include <wx/wx.h>
+#include "StdCompat.h"
 
 class CSerialPortSelector {
 public:
-	static wxArrayString getDevices();
+	static std::vector<std::string> getDevices();
 
 private:
 };

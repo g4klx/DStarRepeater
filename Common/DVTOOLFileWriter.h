@@ -21,31 +21,52 @@
 
 #include "HeaderData.h"
 
-#include <wx/wx.h>
-#include <wx/ffile.h>
+#include "StdCompat.h"
+#include <cstdio>
+#include <cstdint>
 
+/*
+ * Sequential writer for .dvtool recording files (see DVTOOLFileReader.h for
+ * the file format description).
+ *
+ * Usage:
+ *   open()  — writes the "DVTOOL" signature and a placeholder record count,
+ *              then writes the header record.
+ *   write() — appends each DV data frame as a DSVT data record.
+ *   close() — writes the trailer record, then seeks back to the placeholder
+ *             and fills in the final record count (big-endian uint32).
+ *
+ * Two open() overloads are provided:
+ *   open(filename, header) — uses a caller-supplied base filename.
+ *   open(header)           — auto-generates a filename from a timestamp and
+ *                            the callsigns embedded in the header.
+ *
+ * setDirectory() is a class-level (static) setting that prepends a directory
+ * to all generated filenames.
+ */
 class CDVTOOLFileWriter {
 public:
 	CDVTOOLFileWriter();
 	~CDVTOOLFileWriter();
 
-	static void setDirectory(const wxString& dirName);
+	// Sets the output directory used by all CDVTOOLFileWriter instances.
+	static void setDirectory(const std::string& dirName);
 
-	wxString getFileName() const;
+	std::string getFileName() const;
 
 	bool open(const CHeaderData& header);
-	bool open(const wxString& filename, const CHeaderData& header);
+	bool open(const std::string& filename, const CHeaderData& header);
 	bool write(const unsigned char* buffer, unsigned int length);
 	void close();
 
 private:
-	static wxString m_dirName;
+	static std::string m_dirName;
 
-	wxString     m_fileName;
-	wxFFile      m_file;
-	wxUint32     m_count;
-	unsigned int m_sequence;
-	wxFileOffset m_offset;
+	std::string  m_fileName;
+	FILE*        m_file;
+	uint32_t     m_count;      // Number of DSVT records written (header + data + trailer).
+	unsigned int m_sequence;   // Per-frame sequence counter (0–20, mirrors DSRP wire format).
+	long         m_offset;     // File offset of the record-count field, for back-patching in close().
 
 	bool writeHeader(const CHeaderData& header);
 	bool writeTrailer();

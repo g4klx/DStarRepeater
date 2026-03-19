@@ -19,7 +19,14 @@
 #include "CCITTChecksumReverse.h"
 #include "DVAPController.h"
 #include "DStarDefines.h"
+#include "Logger.h"
 #include "Timer.h"
+
+#include <chrono>
+#include <thread>
+#include <cassert>
+#include <cstring>
+#include "EndianCompat.h"
 
 const unsigned char DVAP_REQ_NAME[] = {0x04, 0x20, 0x01, 0x00};
 const unsigned int  DVAP_REQ_NAME_LEN = 4U;
@@ -125,7 +132,7 @@ const unsigned int BUFFER_LENGTH = 200U;
 
 const unsigned int DVAP_DUMP_LENGTH = 30U;
 
-CDVAPController::CDVAPController(const wxString& port, unsigned int frequency, int power, int squelch) :
+CDVAPController::CDVAPController(const std::string& port, unsigned int frequency, int power, int squelch) :
 CModem(),
 m_serial(port, SERIAL_230400),
 m_frequency(frequency),
@@ -133,24 +140,24 @@ m_power(power),
 m_squelch(squelch),
 m_squelchOpen(false),
 m_signal(0),
-m_buffer(NULL),
+m_buffer(nullptr),
 m_streamId(0U),
 m_framePos(0U),
 m_seq(0U),
 m_txData(1000U)
 #if defined(DVAP_DUMP)
 ,
-m_dvapData(NULL),
-m_dvapLength(NULL),
+m_dvapData(nullptr),
+m_dvapLength(nullptr),
 m_dvapIndex(0U)
 #endif
 {
-	wxASSERT(!port.IsEmpty());
-	wxASSERT((frequency >= 144000000U && frequency <= 148000000U) ||
-			 (frequency >= 220000000U && frequency <= 225000000U) ||
-			 (frequency >= 420000000U && frequency <= 450000000U));
-	wxASSERT(power >= -12 && power <= 10);
-	wxASSERT(squelch >= -128 && squelch <= -45);
+	assert(!port.empty());
+	assert((frequency >= 144000000U && frequency <= 148000000U) ||
+		   (frequency >= 220000000U && frequency <= 225000000U) ||
+		   (frequency >= 420000000U && frequency <= 450000000U));
+	assert(power >= -12 && power <= 10);
+	assert(squelch >= -128 && squelch <= -45);
 
 	m_buffer = new unsigned char[BUFFER_LENGTH];
 
@@ -238,16 +245,19 @@ bool CDVAPController::start()
 		return false;
 	}
 
-	Create();
-	SetPriority(100U);
-	Run();
+	m_thread = std::thread(&CDVAPController::entry, this);
 
 	return true;
 }
 
-void* CDVAPController::Entry()
+// Main controller thread.  Runs until m_stopped is set by CModem::stop().
+// The loop is driven by RT_STATE packets (sent every ~20ms by the hardware)
+// which carry the TX buffer space count.  Data is written to the wire only
+// when space > 0 and an RT_STATE has just been received, so writes are
+// naturally rate-limited to the hardware's 20ms frame cadence.
+void CDVAPController::entry()
 {
-	wxLogMessage(wxT("Starting DVAP Controller thread"));
+	wxLogMessage("Starting DVAP Controller thread");
 
 	// Clock every 5ms-ish
 	CTimer pollTimer(200U, 2U);
@@ -272,31 +282,32 @@ void* CDVAPController::Entry()
 			case RT_TIMEOUT:
 				break;
 			case RT_ERROR:
-				wxLogMessage(wxT("Stopping DVAP Controller thread"));
+				wxLogMessage("Stopping DVAP Controller thread");
 #if defined(DVAP_DUMP)
 				dumpPackets();
 #endif
 				m_serial.close();
-				return NULL;
+				delete[] writeBuffer;
+				return;
 			case RT_STATE:
 				m_signal      = int(m_buffer[4U]) - 256;
 				m_squelchOpen = m_buffer[5U] == 0x01U;
 				space         = m_buffer[6U];
 				break;
 			case RT_PTT:
-				m_tx = m_buffer[4U] == 0x01U;	
+				m_tx = m_buffer[4U] == 0x01U;
 				break;
 			case RT_START:
 				break;
 			case RT_STOP:
-				wxLogWarning(wxT("DVAP has stopped, restarting"));
+				wxLogWarning("DVAP has stopped, restarting");
 #if defined(DVAP_DUMP)
 				dumpPackets();
 #endif
 				startDVAP();
 				break;
 			case RT_HEADER: {
-					wxMutexLocker locker(m_mutex);
+					std::lock_guard<std::mutex> lock(m_mutex);
 
 					unsigned char hdr[2U];
 					hdr[0U] = DSMTT_HEADER;
@@ -309,7 +320,7 @@ void* CDVAPController::Entry()
 			case RT_HEADER_ACK:
 				break;
 			case RT_GMSK_DATA: {
-					wxMutexLocker locker(m_mutex);
+					std::lock_guard<std::mutex> lock(m_mutex);
 
 					bool end = (m_buffer[4U] & 0x40U) == 0x40U;
 					if (end) {
@@ -328,7 +339,7 @@ void* CDVAPController::Entry()
 				}
 				break;
 			case RT_FM_DATA:
-				wxLogWarning(wxT("The DVAP has gone into FM mode, restarting the DVAP"));
+				wxLogWarning("The DVAP has gone into FM mode, restarting the DVAP");
 #if defined(DVAP_DUMP)
 				dumpPackets();
 #endif
@@ -337,8 +348,8 @@ void* CDVAPController::Entry()
 				startDVAP();
 				break;
 			default:
-				wxLogMessage(wxT("Unknown message"));
-				CUtils::dump(wxT("Buffer dump"), m_buffer, length);
+				wxLogMessage("Unknown message");
+				CUtils::dump("Buffer dump", m_buffer, length);
 #if defined(DVAP_DUMP)
 				dumpPackets();
 #endif
@@ -348,7 +359,7 @@ void* CDVAPController::Entry()
 		// Use the status packet every 20ms to trigger the sending of data to the DVAP
 		if (space > 0U && type == RT_STATE) {
 			if (writeLength == 0U && m_txData.hasData()) {
-				wxMutexLocker locker(m_mutex);
+				std::lock_guard<std::mutex> lock(m_mutex);
 
 				m_txData.getData(&writeLength, 1U);
 				m_txData.getData(writeBuffer, writeLength);
@@ -356,55 +367,53 @@ void* CDVAPController::Entry()
 
 			// Only send the header when the TX is off
 			if (!m_tx && writeLength == DVAP_HEADER_LEN) {
-				// CUtils::dump(wxT("Write Header"), writeBuffer, writeLength);
+				// CUtils::dump("Write Header", writeBuffer, writeLength);
 
 #if defined(DVAP_DUMP)
 				storePacket(writeBuffer, writeLength);
 #endif
 				int ret = m_serial.write(writeBuffer, writeLength);
 				if (ret != int(writeLength))
-					wxLogWarning(wxT("Error when writing the header to the DVAP"));
+					wxLogWarning("Error when writing the header to the DVAP");
 
 				writeLength = 0U;
 				space--;
 			}
-			
+
 			if (writeLength == DVAP_GMSK_DATA_LEN) {
-				// CUtils::dump(wxT("Write Data"), writeBuffer, writeLength);
+				// CUtils::dump("Write Data", writeBuffer, writeLength);
 
 #if defined(DVAP_DUMP)
 				storePacket(writeBuffer, writeLength);
 #endif
 				int ret = m_serial.write(writeBuffer, writeLength);
 				if (ret != int(writeLength))
-					wxLogWarning(wxT("Error when writing data to the DVAP"));
+					wxLogWarning("Error when writing data to the DVAP");
 
 				writeLength = 0U;
 				space--;
 			}
 		}
 
-		Sleep(5UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
 		pollTimer.clock();
 	}
 
-	wxLogMessage(wxT("Stopping DVAP Controller thread"));
+	wxLogMessage("Stopping DVAP Controller thread");
 
 	stopDVAP();
 
 	delete[] writeBuffer;
 
 	m_serial.close();
-
-	return NULL;
 }
 
 bool CDVAPController::writeHeader(const CHeaderData& header)
 {
 	bool ret = m_txData.hasSpace(DVAP_HEADER_LEN + 1U);
 	if (!ret) {
-		wxLogWarning(wxT("No space to write the header"));
+		wxLogWarning("No space to write the header");
 		return false;
 	}
 
@@ -414,8 +423,8 @@ bool CDVAPController::writeHeader(const CHeaderData& header)
 
 	::memcpy(buffer, DVAP_HEADER, DVAP_HEADER_LEN);
 
-	wxUint16 sid = wxUINT16_SWAP_ON_BE(m_streamId);
-	::memcpy(buffer + 2U, &sid, sizeof(wxUint16));
+	uint16_t sid = htole16(m_streamId);
+	::memcpy(buffer + 2U, &sid, sizeof(uint16_t));
 
 	buffer[4U] = 0x80U;
 	buffer[5U] = 0U;
@@ -426,25 +435,25 @@ bool CDVAPController::writeHeader(const CHeaderData& header)
 	buffer[7U] = header.getFlag2();
 	buffer[8U] = header.getFlag3();
 
-	wxString rpt2 = header.getRptCall2();
-	for (unsigned int i = 0U; i < rpt2.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 9U]  = rpt2.GetChar(i);
+	std::string rpt2 = header.getRptCall2();
+	for (unsigned int i = 0U; i < rpt2.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 9U]  = rpt2[i];
 
-	wxString rpt1 = header.getRptCall1();
-	for (unsigned int i = 0U; i < rpt1.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 17U] = rpt1.GetChar(i);
+	std::string rpt1 = header.getRptCall1();
+	for (unsigned int i = 0U; i < rpt1.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 17U] = rpt1[i];
 
-	wxString your = header.getYourCall();
-	for (unsigned int i = 0U; i < your.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 25U] = your.GetChar(i);
+	std::string your = header.getYourCall();
+	for (unsigned int i = 0U; i < your.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 25U] = your[i];
 
-	wxString my1 = header.getMyCall1();
-	for (unsigned int i = 0U; i < my1.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 33U] = my1.GetChar(i);
+	std::string my1 = header.getMyCall1();
+	for (unsigned int i = 0U; i < my1.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 33U] = my1[i];
 
-	wxString my2 = header.getMyCall2();
-	for (unsigned int i = 0U; i < my2.Len() && i < SHORT_CALLSIGN_LENGTH; i++)
-		buffer[i + 41U] = my2.GetChar(i);
+	std::string my2 = header.getMyCall2();
+	for (unsigned int i = 0U; i < my2.size() && i < SHORT_CALLSIGN_LENGTH; i++)
+		buffer[i + 41U] = my2[i];
 
 	CCCITTChecksumReverse cksum;
 	cksum.update(buffer + 6U, RADIO_HEADER_LENGTH_BYTES - 2U);
@@ -453,7 +462,7 @@ bool CDVAPController::writeHeader(const CHeaderData& header)
 	m_framePos = 0U;
 	m_seq = 0U;
 
-	wxMutexLocker locker(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 
 	unsigned char len = DVAP_HEADER_LEN;
 	m_txData.addData(&len, 1U);
@@ -467,7 +476,7 @@ bool CDVAPController::writeData(const unsigned char* data, unsigned int, bool en
 {
 	bool ret = m_txData.hasSpace(DVAP_GMSK_DATA_LEN + 1U);
 	if (!ret) {
-		wxLogWarning(wxT("No space to write data"));
+		wxLogWarning("No space to write data");
 		return false;
 	}
 
@@ -478,8 +487,8 @@ bool CDVAPController::writeData(const unsigned char* data, unsigned int, bool en
 	if (::memcmp(data + VOICE_FRAME_LENGTH_BYTES, DATA_SYNC_BYTES, DATA_FRAME_LENGTH_BYTES) == 0)
 		m_framePos = 0U;
 
-	wxUint16 sid = wxUINT16_SWAP_ON_BE(m_streamId);
-	::memcpy(buffer + 2U, &sid, sizeof(wxUint16));
+	uint16_t sid = htole16(m_streamId);
+	::memcpy(buffer + 2U, &sid, sizeof(uint16_t));
 
 	buffer[4U] = m_framePos;
 	buffer[5U] = m_seq;
@@ -489,7 +498,7 @@ bool CDVAPController::writeData(const unsigned char* data, unsigned int, bool en
 
 	::memcpy(buffer + 6U, data, DV_FRAME_LENGTH_BYTES);
 
-	wxMutexLocker locker(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 
 	unsigned char len = DVAP_GMSK_DATA_LEN;
 	m_txData.addData(&len, 1U);
@@ -545,14 +554,14 @@ bool CDVAPController::getName()
 			return false;
 		}
 
-		::wxMilliSleep(50UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RT_NAME) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The Dongle is not replying with its name"));
+				wxLogError("The Dongle is not replying with its name");
 				return false;
 			}
 		}
@@ -560,7 +569,7 @@ bool CDVAPController::getName()
 
 	bool cmp = ::memcmp(m_buffer, DVAP_RESP_NAME, length) == 0;
 	if (!cmp) {
-		wxLogError(wxT("The Dongle is not responding as a DVAP"));
+		wxLogError("The Dongle is not responding as a DVAP");
 		return false;
 	}
 
@@ -579,21 +588,21 @@ bool CDVAPController::getFirmware()
 			return false;
 		}
 
-		::wxMilliSleep(50UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RT_FIRMWARE) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The DVAP is not responding with its firmware version"));
+				wxLogError("The DVAP is not responding with its firmware version");
 				return false;
 			}
 		}
 	} while (resp != RT_FIRMWARE);
 
 	unsigned int version = m_buffer[6U] * 256U + m_buffer[5U];
-	wxLogInfo(wxT("DVAP Firmware version: %u.%u"), version / 100U, version % 100U);
+	wxLogInfo("DVAP Firmware version: %u.%u", version / 100U, version % 100U);
 
 	return true;
 }
@@ -610,21 +619,21 @@ bool CDVAPController::getSerial()
 			return false;
 		}
 
-		::wxMilliSleep(50UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RT_SERIAL) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The DVAP is not responding with its serial number"));
+				wxLogError("The DVAP is not responding with its serial number");
 				return false;
 			}
 		}
 	} while (resp != RT_SERIAL);
 
-	wxString serial((char*)(m_buffer + 4U), wxConvLocal, length - 5U);
-	wxLogInfo(wxT("DVAP Serial number: %s"), serial.c_str());
+	std::string serial((char*)(m_buffer + 4U), length - 5U);
+	wxLogInfo("DVAP Serial number: %s", serial.c_str());
 
 	return true;
 }
@@ -641,14 +650,14 @@ bool CDVAPController::startDVAP()
 			return false;
 		}
 
-		::wxMilliSleep(50UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RT_START) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The DVAP is not responding to the start command"));
+				wxLogError("The DVAP is not responding to the start command");
 				return false;
 			}
 		}
@@ -669,14 +678,14 @@ bool CDVAPController::stopDVAP()
 			return false;
 		}
 
-		::wxMilliSleep(50UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RT_STOP) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The DVAP is not responding to the stop command"));
+				wxLogError("The DVAP is not responding to the stop command");
 				return false;
 			}
 		}
@@ -697,14 +706,14 @@ bool CDVAPController::setModulation()
 			return false;
 		}
 
-		::wxMilliSleep(50UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RT_MODULATION) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The DVAP is not responding to the modulation command"));
+				wxLogError("The DVAP is not responding to the modulation command");
 				return false;
 			}
 		}
@@ -725,14 +734,14 @@ bool CDVAPController::setMode()
 			return false;
 		}
 
-		::wxMilliSleep(50UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RT_MODE) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The DVAP is not responding to the mode command"));
+				wxLogError("The DVAP is not responding to the mode command");
 				return false;
 			}
 		}
@@ -749,7 +758,7 @@ bool CDVAPController::setSquelch()
 	do {
 		unsigned char buffer[10U];
 		::memcpy(buffer, DVAP_REQ_SQUELCH, DVAP_REQ_SQUELCH_LEN);
-		::memcpy(buffer + 4U, &m_squelch, sizeof(wxInt8));
+		::memcpy(buffer + 4U, &m_squelch, sizeof(int8_t));
 
 		int ret = m_serial.write(buffer, DVAP_REQ_SQUELCH_LEN);
 		if (ret != int(DVAP_REQ_SQUELCH_LEN)) {
@@ -757,14 +766,14 @@ bool CDVAPController::setSquelch()
 			return false;
 		}
 
-		::wxMilliSleep(50UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RT_SQUELCH) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The DVAP is not responding to the squelch command"));
+				wxLogError("The DVAP is not responding to the squelch command");
 				return false;
 			}
 		}
@@ -782,8 +791,8 @@ bool CDVAPController::setPower()
 		unsigned char buffer[10U];
 		::memcpy(buffer, DVAP_REQ_POWER, DVAP_REQ_POWER_LEN);
 
-		wxInt16 power = wxINT16_SWAP_ON_BE(m_power);
-		::memcpy(buffer + 4U, &power, sizeof(wxInt16));
+		int16_t power = htole16(m_power);
+		::memcpy(buffer + 4U, &power, sizeof(int16_t));
 
 		int ret = m_serial.write(buffer, DVAP_REQ_POWER_LEN);
 		if (ret != int(DVAP_REQ_POWER_LEN)) {
@@ -791,14 +800,14 @@ bool CDVAPController::setPower()
 			return false;
 		}
 
-		::wxMilliSleep(50UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RT_POWER) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The DVAP is not responding to the power command"));
+				wxLogError("The DVAP is not responding to the power command");
 				return false;
 			}
 		}
@@ -819,29 +828,29 @@ bool CDVAPController::setFrequency()
 			return false;
 		}
 
-		::wxMilliSleep(50UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RT_FREQLIMITS) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The DVAP is not responding to the frequency limits command"));
+				wxLogError("The DVAP is not responding to the frequency limits command");
 				return false;
 			}
 		}
 	} while (resp != RT_FREQLIMITS);
 
-	wxUint32* pFreq1 = (wxUint32*)(m_buffer + 4U);
-	wxUint32* pFreq2 = (wxUint32*)(m_buffer + 8U);
+	uint32_t* pFreq1 = (uint32_t*)(m_buffer + 4U);
+	uint32_t* pFreq2 = (uint32_t*)(m_buffer + 8U);
 
-	wxUint32 lower = wxUINT32_SWAP_ON_BE(*pFreq1);
-	wxUint32 upper = wxUINT32_SWAP_ON_BE(*pFreq2);
+	uint32_t lower = le32toh(*pFreq1);
+	uint32_t upper = le32toh(*pFreq2);
 
-	wxLogInfo(wxT("DVAP frequency limits are %u Hz to %u Hz"), lower, upper);
+	wxLogInfo("DVAP frequency limits are %u Hz to %u Hz", lower, upper);
 
 	if (m_frequency < lower || m_frequency > upper) {
-		wxLogError(wxT("The required frequency is out of the range of the DVAP hardware"));
+		wxLogError("The required frequency is out of the range of the DVAP hardware");
 		m_serial.close();
 		return false;
 	}
@@ -851,8 +860,8 @@ bool CDVAPController::setFrequency()
 		unsigned char buffer[10U];
 		::memcpy(buffer, DVAP_REQ_FREQUENCY, DVAP_REQ_FREQUENCY_LEN);
 
-		wxUint32 frequency = wxUINT32_SWAP_ON_BE(m_frequency);
-		::memcpy(buffer + 4U, &frequency, sizeof(wxUint32));
+		uint32_t frequency = htole32(m_frequency);
+		::memcpy(buffer + 4U, &frequency, sizeof(uint32_t));
 
 		int ret = m_serial.write(buffer, DVAP_REQ_FREQUENCY_LEN);
 		if (ret != int(DVAP_REQ_FREQUENCY_LEN)) {
@@ -860,14 +869,14 @@ bool CDVAPController::setFrequency()
 			return false;
 		}
 
-		::wxMilliSleep(50UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RT_FREQUENCY) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The DVAP is not responding to the frequency command"));
+				wxLogError("The DVAP is not responding to the frequency command");
 				return false;
 			}
 		}
@@ -876,6 +885,16 @@ bool CDVAPController::setFrequency()
 	return true;
 }
 
+// Reads one complete DVAP binary frame.
+//
+// Wire format: [len_lo] [flags|len_hi] [cmd_lo] [cmd_hi] [payload...]
+//   Frame length = byte[0] + (byte[1] & 0x1F) * 256.
+//   Maximum sane length is capped at 50 bytes; anything larger indicates
+//   framing loss and triggers resync().
+//
+// The status packet (0x07 0x20 0x90 0x00 ...) occasionally arrives with
+// its first byte missing from the UART FIFO; the workaround below detects
+// the truncated signature {0x20, 0x90} and prepends the missing 0x07.
 RESP_TYPE CDVAPController::getResponse(unsigned char *buffer, unsigned int& length)
 {
 	int ret = m_serial.read(buffer, DVAP_HEADER_LENGTH);
@@ -898,7 +917,7 @@ RESP_TYPE CDVAPController::getResponse(unsigned char *buffer, unsigned int& leng
 
 	// Check for silliness
 	if (length > 50U) {
-		CUtils::dump(wxT("Bad DVAP header"), buffer, DVAP_HEADER_LENGTH);
+		CUtils::dump("Bad DVAP header", buffer, DVAP_HEADER_LENGTH);
 #if defined(DVAP_DUMP)
 		dumpPackets();
 #endif
@@ -912,11 +931,14 @@ RESP_TYPE CDVAPController::getResponse(unsigned char *buffer, unsigned int& leng
 			return RT_ERROR;
 		if (ret > 0)
 			offset += ret;
-		if (ret == 0)
-			Sleep(5UL);
+		if (ret == 0) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			if (m_stopped)
+				return RT_TIMEOUT;
+		}
 	}
 
-	// CUtils::dump(wxT("Received"), buffer, length);
+	// CUtils::dump("Received", buffer, length);
 
 	if (::memcmp(buffer, DVAP_STATUS, 4U) == 0)
 		return RT_STATE;
@@ -955,7 +977,7 @@ RESP_TYPE CDVAPController::getResponse(unsigned char *buffer, unsigned int& leng
 	else if (::memcmp(buffer, DVAP_RESP_SQUELCH, 4U) == 0)
 		return RT_SQUELCH;
 	else {
-		CUtils::dump(wxT("Bad DVAP data"), buffer, length);
+		CUtils::dump("Bad DVAP data", buffer, length);
 #if defined(DVAP_DUMP)
 		dumpPackets();
 #endif
@@ -964,30 +986,41 @@ RESP_TYPE CDVAPController::getResponse(unsigned char *buffer, unsigned int& leng
 	}
 }
 
+// Discards bytes from the serial port one at a time, shifting them through a
+// sliding window, until the 7-byte status packet signature is matched at
+// bytes[0..3].  This re-aligns the byte boundary after a framing error.
 void CDVAPController::resync()
 {
-	wxLogWarning(wxT("Resynchronising the DVAP data stream"));
+	wxLogWarning("Resynchronising the DVAP data stream");
 
 	unsigned char data[DVAP_STATUS_LEN];
 	::memset(data, 0x00U, DVAP_STATUS_LEN);
 
 	while (::memcmp(data, DVAP_STATUS, 4U) != 0) {
+		if (m_stopped)
+			return;
+
 		unsigned char c;
 		int n = m_serial.read(&c, 1U);
-		if (n > 0) {
-			data[0U] = data[1U];
-			data[1U] = data[2U];
-			data[2U] = data[3U];
-			data[3U] = data[4U];
-			data[4U] = data[5U];
-			data[5U] = data[6U];
-			data[6U] = c;
-
-			// CUtils::dump(wxT("Resync buffer"), data, DVAP_STATUS_LEN);
+		if (n < 0)
+			return;
+		if (n == 0) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			continue;
 		}
+
+		data[0U] = data[1U];
+		data[1U] = data[2U];
+		data[2U] = data[3U];
+		data[3U] = data[4U];
+		data[4U] = data[5U];
+		data[5U] = data[6U];
+		data[6U] = c;
+
+		// CUtils::dump("Resync buffer", data, DVAP_STATUS_LEN);
 	}
 
-	wxLogMessage(wxT("End resynchronising"));
+	wxLogMessage("End resynchronising");
 }
 
 #if defined(DVAP_DUMP)
@@ -1004,22 +1037,15 @@ void CDVAPController::storePacket(const unsigned char* data, unsigned int length
 
 void CDVAPController::dumpPackets()
 {
-	unsigned int n = m_dvapIndex;
-	unsigned int i = 0U;
-	while (n != m_dvapIndex) {
+	unsigned int n = (m_dvapIndex + 1U) % DVAP_DUMP_LENGTH;
+	for (unsigned int i = 0U; i < DVAP_DUMP_LENGTH; i++) {
 		if (m_dvapLength[n] > 0U) {
-			wxString text;
-			text.Printf(wxT("Packet: %u"), i);
-
+			char text[32];
+			::snprintf(text, sizeof(text), "Packet: %u", i);
 			CUtils::dump(text, m_dvapData[n], m_dvapLength[n]);
 		}
-
-		i++;
-		n++;
-		if (n >= DVAP_DUMP_LENGTH)
-			n = 0U;
+		n = (n + 1U) % DVAP_DUMP_LENGTH;
 	}
-
 	m_dvapIndex = 0U;
 }
 

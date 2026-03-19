@@ -19,6 +19,20 @@
 #ifndef	Timer_H
 #define	Timer_H
 
+/*
+ * Tick-based countdown timer used for protocol timeouts.
+ *
+ * The timer counts upward in discrete ticks.  A timeout expires when the
+ * internal counter reaches or exceeds the threshold derived from the
+ * configured duration.  The caller drives the timer by calling clock() once
+ * per tick (or once per repeater loop iteration).
+ *
+ * ticksPerSec must match the rate at which clock() is called.  For example,
+ * if clock() is called every millisecond, pass ticksPerSec=1000.
+ *
+ * A timer with a zero timeout is permanently stopped and will never expire.
+ * start() is a no-op if no timeout has been configured.
+ */
 class CTimer {
 public:
 	CTimer(unsigned int ticksPerSec = 1000, unsigned int secs = 0U, unsigned int msecs = 0U);
@@ -74,6 +88,7 @@ public:
 		return false;
 	}
 
+	// Advance the timer by ticks steps; call once per repeater loop iteration.
 	void clock(unsigned int ticks = 1U)
 	{
 		if (m_timer > 0U && m_timeout > 0U)
@@ -82,8 +97,8 @@ public:
 
 private:
 	unsigned int m_ticksPerSec;
-	unsigned int m_timeout;
-	unsigned int m_timer;
+	unsigned int m_timeout;  // Expiry threshold in ticks (+1 to distinguish stopped from zero-elapsed).
+	unsigned int m_timer;    // Current tick count; 0 means stopped.
 };
 
 #endif

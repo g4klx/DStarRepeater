@@ -21,8 +21,20 @@
 
 #include "Utils.h"
 
-#include <wx/wx.h>
-
+/*
+ * IGMSKModem - Abstract interface for GMSK modem hardware.
+ *
+ * Implemented by CGMSKModemLibUsb (libusb) and potentially other backends.
+ * CGMSKController owns an IGMSKModem* and drives it through this interface,
+ * so the controller is independent of the USB transport details.
+ *
+ * The interface divides into three functional groups:
+ *   Lifecycle: open(), close()
+ *   Receive:   readHeader(), readData() - poll-based; called from controller loop
+ *   Transmit:  writeHeader(), writeData(), setPTT() - push-based from controller
+ *   Status:    getPTT(), hasSpace() - return TRISTATE (TRUE/FALSE/UNKNOWN)
+ *              UNKNOWN indicates a hardware error requiring modem reconnection.
+ */
 class IGMSKModem {
 public:
 	virtual ~IGMSKModem() = 0;
@@ -46,4 +58,3 @@ private:
 };
 
 #endif
-

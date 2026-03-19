@@ -15,16 +15,19 @@
 #include "SlowDataDecoder.h"
 #include "DStarDefines.h"
 
+#include <cassert>
+#include <cstring>
+
 const unsigned int  SLOW_DATA_BLOCK_SIZE = 6U;
 
 const unsigned int  SLOW_DATA_FULL_BLOCK_SIZE = (SLOW_DATA_BLOCK_SIZE - 1U) * 10U;
 
 CSlowDataDecoder::CSlowDataDecoder() :
-m_buffer(NULL),
+m_buffer(nullptr),
 m_state(SDD_FIRST),
-m_headerData(NULL),
+m_headerData(nullptr),
 m_headerPtr(0U),
-m_header(NULL)
+m_header(nullptr)
 {
 	m_buffer     = new unsigned char[SLOW_DATA_BLOCK_SIZE];
 	m_headerData = new unsigned char[SLOW_DATA_FULL_BLOCK_SIZE];
@@ -40,7 +43,7 @@ CSlowDataDecoder::~CSlowDataDecoder()
 
 void CSlowDataDecoder::addData(const unsigned char* data)
 {
-	wxASSERT(data != NULL);
+	assert(data != nullptr);
 
 	switch (m_state) {
 		case SDD_FIRST:
@@ -57,13 +60,13 @@ void CSlowDataDecoder::addData(const unsigned char* data)
 			m_state = SDD_FIRST;
 			processHeader();
 			break;
-	}			
+	}
 }
 
 CHeaderData* CSlowDataDecoder::getHeaderData()
 {
-	if (m_header == NULL)
-		return NULL;
+	if (m_header == nullptr)
+		return nullptr;
 
 	CHeaderData* temp = new CHeaderData(*m_header);
 
@@ -88,13 +91,13 @@ void CSlowDataDecoder::reset()
 	::memset(m_headerData, 0x00, SLOW_DATA_FULL_BLOCK_SIZE * sizeof(unsigned char));
 
 	delete m_header;
-	m_header = NULL;
+	m_header = nullptr;
 }
 
 void CSlowDataDecoder::processHeader()
 {
 	// Do we have a complete and valid header already?
-	if (m_header != NULL)
+	if (m_header != nullptr)
 		return;
 
 	for (unsigned int i = 1U; i <= (SLOW_DATA_BLOCK_SIZE - 1U); i++, m_headerPtr++) {

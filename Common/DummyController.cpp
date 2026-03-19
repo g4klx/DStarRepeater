@@ -13,8 +13,6 @@
 
 #include "DummyController.h"
 
-#include <wx/wx.h>
-
 CDummyController::CDummyController()
 {
 }

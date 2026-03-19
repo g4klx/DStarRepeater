@@ -21,24 +21,38 @@
 
 #include "UDPReaderWriter.h"
 #include "DStarDefines.h"
+#include "StdCompat.h"
 
-#include <wx/wx.h>
-#include <wx/datetime.h>
-
+/*
+ * Implements the D-Star Repeater Protocol (DSRP) from the gateway side.
+ *
+ * This is the mirror of CRepeaterProtocolHandler — it is used by the gateway
+ * process (ircDDBGateway/DStarGateway) to communicate with one or more
+ * repeater daemons.  Unlike the repeater side, there is no fixed peer address:
+ * each packet carries the sender's address and port, which are passed through
+ * to the caller so it can route replies back to the correct repeater.
+ *
+ * The same DSRP packet types are used as on the repeater side (0x20 header,
+ * 0x21 data, 0x0B register).  The key difference is that the gateway sends
+ * headers four times for redundancy (vs two on the repeater side).
+ */
 class CGatewayProtocolHandler {
 public:
-	CGatewayProtocolHandler(const wxString& localAddress, unsigned int localPort);
+	CGatewayProtocolHandler(const std::string& localAddress, unsigned int localPort);
 	~CGatewayProtocolHandler();
 
 	bool open();
 
-	bool writeHeader(const unsigned char* header, wxUint16 id, const in_addr& address, unsigned int port);
-	bool writeData(const unsigned char* data, unsigned int length, wxUint16 id, wxUint8 seqNo, const in_addr& address, unsigned int port);
+	// Sends the header packet four times to reduce the impact of UDP packet loss.
+	bool writeHeader(const unsigned char* header, uint16_t id, const in_addr& address, unsigned int port);
+	bool writeData(const unsigned char* data, unsigned int length, uint16_t id, uint8_t seqNo, const in_addr& address, unsigned int port);
 
-	NETWORK_TYPE read(wxUint16& id, in_addr& address, unsigned int& port);
+	// Drains pending datagrams; fills address/port with the sender for routing.
+	NETWORK_TYPE read(uint16_t& id, in_addr& address, unsigned int& port);
 	unsigned int readHeader(unsigned char* data, unsigned int length);
-	unsigned int readData(unsigned char* data, unsigned int length, wxUint8& seqNo, unsigned int& errors);
-	unsigned int readRegister(wxString& name);
+	unsigned int readData(unsigned char* data, unsigned int length, uint8_t& seqNo, unsigned int& errors);
+	// Reads a Register packet; name is the repeater's self-reported name string.
+	unsigned int readRegister(std::string& name);
 
 	void close();
 
@@ -48,7 +62,7 @@ private:
 	unsigned char*   m_buffer;
 	unsigned int     m_length;
 
-	bool readPackets(wxUint16& id, in_addr& address, unsigned int& port);
+	bool readPackets(uint16_t& id, in_addr& address, unsigned int& port);
 };
 
 #endif

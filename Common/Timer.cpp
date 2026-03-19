@@ -18,19 +18,18 @@
 
 #include "Timer.h"
 
-#include <wx/wx.h>
+#include <cassert>
 
 CTimer::CTimer(unsigned int ticksPerSec, unsigned int secs, unsigned int msecs) :
 m_ticksPerSec(ticksPerSec),
 m_timeout(0U),
 m_timer(0U)
 {
-	wxASSERT(ticksPerSec > 0U);
+	assert(ticksPerSec > 0U);
 
 	if (secs > 0U || msecs > 0U) {
-		// m_timeout = ((secs * 1000U + msecs) * m_ticksPerSec) / 1000U + 1U;
-		unsigned wxLongLong_t temp = (secs * wxULL(1000) + msecs) * m_ticksPerSec;
-		m_timeout = (unsigned int)(temp / wxULL(1000) + wxULL(1));
+		unsigned long long temp = ((unsigned long long)secs * 1000ULL + msecs) * m_ticksPerSec;
+		m_timeout = (unsigned int)(temp / 1000ULL + 1ULL);
 	}
 }
 
@@ -41,9 +40,8 @@ CTimer::~CTimer()
 void CTimer::setTimeout(unsigned int secs, unsigned int msecs)
 {
 	if (secs > 0U || msecs > 0U) {
-		// m_timeout = ((secs * 1000U + msecs) * m_ticksPerSec) / 1000U + 1U;
-		unsigned wxLongLong_t temp = (secs * wxULL(1000) + msecs) * m_ticksPerSec;
-		m_timeout = (unsigned int)(temp / wxULL(1000) + wxULL(1));
+		unsigned long long temp = ((unsigned long long)secs * 1000ULL + msecs) * m_ticksPerSec;
+		m_timeout = (unsigned int)(temp / 1000ULL + 1ULL);
 	} else {
 		m_timeout = 0U;
 		m_timer = 0U;

@@ -8,6 +8,12 @@
 #include <wiringPi.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
+#include <cstring>
+#include <cstdio>
 
 #include "UDRCController.h"
 
@@ -52,12 +58,12 @@ static int getNWDRProductID() {
 	long product_id = 0;
 
 	if((proc_file = open(vendor_string_path, O_RDONLY|O_NONBLOCK)) == -1) {
-		wxLogError("Open %s: %s\n", vendor_string_path, strerror(errno));
+		::fprintf(stderr, "Open %s: %s\n", vendor_string_path, strerror(errno));
 	}
 
 	read_size = read(proc_file, buffer, sizeof(buffer));
 	if(read_size < 1) {
-		wxLogError("Read %s: %s\n", vendor_string_path, strerror(errno));
+		::fprintf(stderr, "Read %s: %s\n", vendor_string_path, strerror(errno));
 		close(proc_file);
 		return -1;
 	}
@@ -65,26 +71,26 @@ static int getNWDRProductID() {
 	close(proc_file);
 
 	if(strncmp(nwdr_vendor_string, buffer, sizeof(nwdr_vendor_string))) {
-		wxLogError("HAT is not a NW Digital Radio Product: %.255s\n", buffer);
+		::fprintf(stderr, "HAT is not a NW Digital Radio Product: %.255s\n", buffer);
 		return -1;
 	}
 
 	if((proc_file = open(product_id_string_path, O_RDONLY|O_NONBLOCK)) == -1) {
-		wxLogError("Open %s: %s\n", product_id_string_path, strerror(errno));
+		::fprintf(stderr, "Open %s: %s\n", product_id_string_path, strerror(errno));
 	}
 
 	read_size = read(proc_file, buffer, sizeof(buffer));
 	if(read_size < 1) {
-		wxLogError("Read %s: %s\n", product_id_string_path, strerror(errno));
+		::fprintf(stderr, "Read %s: %s\n", product_id_string_path, strerror(errno));
 		close(proc_file);
 		return -1;
 	}
 
 	close(proc_file);
 
-	product_id = strtol(buffer, NULL, 16);
+	product_id = strtol(buffer, nullptr, 16);
 	if(product_id == EINVAL || product_id == ERANGE) {
-		wxLogError("Invalid value for product id: %.255s\n", buffer);
+		::fprintf(stderr, "Invalid value for product id: %.255s\n", buffer);
 		return -1;
 	}
 
@@ -93,7 +99,7 @@ static int getNWDRProductID() {
 
 //  XXX This is ugly, we should have a better parent class
 CUDRCController::CUDRCController(enum repeater_modes mode) :
-CExternalController(NULL, false),
+CExternalController(nullptr, false),
 m_mode(mode),
 m_pttPin(PTT_PIN)
 {
@@ -129,7 +135,7 @@ void CUDRCController::switchMode(enum repeater_modes mode) {
 bool CUDRCController::open()
 {
 	if(::wiringPiSetupGpio() != 0) {
-		wxLogError("Unable to initialize the wiringPi library");
+		::fprintf(stderr, "Unable to initialize the wiringPi library\n");
 		return false;
 	}
 
@@ -163,7 +169,7 @@ bool CUDRCController::open()
 			case -1:
 				return false;
 			default:
-				wxLogError("Unknown NW Digital Radio Product");
+				::fprintf(stderr, "Unknown NW Digital Radio Product\n");
 				return false;
 		}
 
@@ -218,4 +224,3 @@ void CUDRCController::close()
 }
 
 #endif
-

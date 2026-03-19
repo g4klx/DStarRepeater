@@ -14,6 +14,18 @@
 #ifndef	HardwareController_H
 #define	HardwareController_H
 
+/*
+ * Abstract interface for hardware I/O controllers.
+ *
+ * Concrete implementations (CSerialLineController, CGPIOController,
+ * CArduinoController, CK8055Controller, etc.) allow the repeater to
+ * drive external PTT lines, squelch outputs, and read COR/COS inputs
+ * through whatever physical interface is attached to the host machine.
+ *
+ * Up to five digital inputs and eight digital outputs are supported;
+ * the meaning of each pin is determined by the configured controller
+ * type and the hardware wiring.
+ */
 class IHardwareController {
 public:
 	virtual ~IHardwareController() = 0;

@@ -21,9 +21,11 @@
 #include "DStarDefines.h"
 #include "HeaderData.h"
 #include "Version.h"
+#include "Logger.h"
 
-const unsigned char DTMF_MASK[] = {0x82U, 0x08U, 0x20U, 0x82U, 0x00U, 0x00U, 0x82U, 0x00U, 0x00U};
-const unsigned char DTMF_SIG[]  = {0x82U, 0x08U, 0x20U, 0x82U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U};
+#include <chrono>
+
+using namespace std::chrono;
 
 const unsigned int MAX_DATA_SYNC_BIT_ERRS  = 2U;
 
@@ -33,14 +35,13 @@ const unsigned int SILENCE_THRESHOLD = 2U;
 
 const unsigned int CYCLE_TIME  = 9U;
 
-CDStarRepeaterTXThread::CDStarRepeaterTXThread(const wxString& type) :
+CDStarRepeaterTXThread::CDStarRepeaterTXThread(const std::string& type) :
 m_type(type),
-m_modem(NULL),
-m_protocolHandler(NULL),
-m_stopped(true),
+m_modem(nullptr),
+m_protocolHandler(nullptr),
 m_rptCallsign(),
-m_txHeader(NULL),
-m_networkQueue(NULL),
+m_txHeader(nullptr),
+m_networkQueue(nullptr),
 m_writeNum(0U),
 m_readNum(0U),
 m_networkSeqNo(0U),
@@ -51,7 +52,7 @@ m_state(DSRS_LISTENING),
 m_tx(false),
 m_space(0U),
 m_killed(false),
-m_lastData(NULL),
+m_lastData(nullptr),
 m_ambe(),
 m_headerTime(),
 m_packetTime(),
@@ -75,18 +76,31 @@ CDStarRepeaterTXThread::~CDStarRepeaterTXThread()
 	delete[] m_networkQueue;
 	delete[] m_lastData;
 	delete   m_txHeader;
+	delete   m_modem;
+	delete   m_protocolHandler;
 }
 
-void *CDStarRepeaterTXThread::Entry()
+// ---------------------------------------------------------------------------
+// entry() — transmit-only thread body.
+//
+// Requires modem, protocol handler, and callsign before starting.
+// Main loop (~9 ms):
+//   1. Refresh modem space/TX state every 100 ms.
+//   2. receiveNetwork() — drain and queue gateway audio frames; handle gap filling.
+//   3. receiveModem()   — drain modem events and discard them (TX-only).
+//   4. Network watchdog: if DSRS_NETWORK and no frames for NETWORK_TIMEOUT, force EOT.
+//   5. Gateway register timer (keepalive every 30 s).
+//   6. Drain the network queue to the modem when space is available.
+//   7. MQTT status publication (1 s).
+// ---------------------------------------------------------------------------
+void CDStarRepeaterTXThread::entry()
 {
 	// Wait here until we have the essentials to run
-	while (!m_killed && (m_modem == NULL  || m_protocolHandler == NULL || m_rptCallsign.IsEmpty() || m_rptCallsign.IsSameAs(wxT("        "))))
-		::wxMilliSleep(500UL);		// 1/2 sec
+	while (!m_killed && (m_modem == nullptr  || m_protocolHandler == nullptr || m_rptCallsign.empty() || m_rptCallsign == "        "))
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));		// 1/2 sec
 
 	if (m_killed)
-		return NULL;
-
-	m_stopped = false;
+		return;
 
 	m_registerTimer.start(10U);
 	m_statusTimer.start();
@@ -94,18 +108,13 @@ void *CDStarRepeaterTXThread::Entry()
 	m_mqttStatusTimer.start();
 #endif
 
-	wxString hardware = m_type;
-	int n = hardware.Find(wxT(' '));
-	if (n != wxNOT_FOUND)
-		hardware = m_type.Left(n);
+	wxLogMessage("Starting the D-Star transmitter thread");
 
-	wxLogMessage(wxT("Starting the D-Star transmitter thread"));
-
-	wxStopWatch stopWatch;
+	auto stopWatch = steady_clock::now();
 
 	try {
 		while (!m_killed) {
-			stopWatch.Start();
+			stopWatch = steady_clock::now();
 
 			if (m_statusTimer.hasExpired() || m_space == 0U) {
 				m_space = m_modem->getSpace();
@@ -119,7 +128,7 @@ void *CDStarRepeaterTXThread::Entry()
 
 			if (m_state == DSRS_NETWORK) {
 				if (m_watchdogTimer.hasExpired()) {
-					wxLogMessage(wxT("Network watchdog has expired"));
+					wxLogMessage("Network watchdog has expired");
 					// Send end of transmission data to the radio
 					m_networkQueue[m_writeNum]->addData(END_PATTERN_BYTES, DV_FRAME_LENGTH_BYTES, true);
 #if defined(MQTT)
@@ -144,7 +153,7 @@ void *CDStarRepeaterTXThread::Entry()
 #if defined(MQTT)
 			// Publish status to MQTT every second
 			if (m_mqttStatusTimer.hasExpired()) {
-				if (g_mqtt != NULL) {
+				if (g_mqtt != nullptr) {
 					CDStarRepeaterStatusData* status = getStatus();
 					std::string json = status->toJSON();
 					g_mqtt->publish("status", json.c_str());
@@ -154,31 +163,31 @@ void *CDStarRepeaterTXThread::Entry()
 			}
 #endif
 
-			unsigned long ms = stopWatch.Time();
+			long long ms = duration_cast<milliseconds>(steady_clock::now() - stopWatch).count();
 			if (ms < CYCLE_TIME) {
-				::wxMilliSleep(CYCLE_TIME - ms);
+				std::this_thread::sleep_for(std::chrono::milliseconds(CYCLE_TIME - ms));
 				clock(CYCLE_TIME);
 			} else {
-				clock(ms);
+				clock((unsigned int)ms);
 			}
 		}
 	}
 	catch (std::exception& e) {
-		wxString message(e.what(), wxConvLocal);
-		wxLogError(wxT("Exception raised - \"%s\""), message.c_str());
+		wxLogError("Exception raised - \"%s\"", e.what());
 	}
 	catch (...) {
-		wxLogError(wxT("Unknown exception raised"));
+		wxLogError("Unknown exception raised");
 	}
 
-	wxLogMessage(wxT("Stopping the D-Star transmitter thread"));
+	wxLogMessage("Stopping the D-Star transmitter thread");
 
 	m_modem->stop();
+	delete m_modem;
+	m_modem = nullptr;
 
 	m_protocolHandler->close();
 	delete m_protocolHandler;
-
-	return NULL;
+	m_protocolHandler = nullptr;
 }
 
 void CDStarRepeaterTXThread::kill()
@@ -186,21 +195,21 @@ void CDStarRepeaterTXThread::kill()
 	m_killed = true;
 }
 
-void CDStarRepeaterTXThread::setCallsign(const wxString& callsign, const wxString&, DSTAR_MODE, ACK_TYPE, bool, bool, bool, bool)
+void CDStarRepeaterTXThread::setCallsign(const std::string& callsign, const std::string&, DSTAR_MODE, ACK_TYPE, bool, bool, bool, bool)
 {
 	// Pad the callsign up to eight characters
 	m_rptCallsign = callsign;
-	m_rptCallsign.resize(LONG_CALLSIGN_LENGTH, wxT(' '));
+	m_rptCallsign.resize(LONG_CALLSIGN_LENGTH, ' ');
 }
 
 void CDStarRepeaterTXThread::setProtocolHandler(CRepeaterProtocolHandler* handler, bool local)
 {
-	wxASSERT(handler != NULL);
+	assert(handler != nullptr);
 
 	m_protocolHandler = handler;
 
 	if (local) {
-		wxLogInfo(wxT("Reducing transmit buffering because of local connection"));
+		wxLogInfo("Reducing transmit buffering because of local connection");
 
 		for (unsigned int i = 0U; i < NETWORK_QUEUE_COUNT; i++)
 			m_networkQueue[i]->setThreshold(LOCAL_RUN_FRAME_COUNT);
@@ -209,7 +218,7 @@ void CDStarRepeaterTXThread::setProtocolHandler(CRepeaterProtocolHandler* handle
 
 void CDStarRepeaterTXThread::setModem(CModem* modem)
 {
-	wxASSERT(modem != NULL);
+	assert(modem != nullptr);
 
 	m_modem = modem;
 }
@@ -218,11 +227,11 @@ void CDStarRepeaterTXThread::setTimes(unsigned int, unsigned int)
 {
 }
 
-void CDStarRepeaterTXThread::setBeacon(unsigned int, const wxString&, bool, TEXT_LANG)
+void CDStarRepeaterTXThread::setBeacon(unsigned int, const std::string&, bool, TEXT_LANG)
 {
 }
 
-void CDStarRepeaterTXThread::setAnnouncement(bool, unsigned int, const wxString&, const wxString&, const wxString&, const wxString&)
+void CDStarRepeaterTXThread::setAnnouncement(bool, unsigned int, const std::string&, const std::string&, const std::string&, const std::string&)
 {
 }
 
@@ -234,22 +243,17 @@ void CDStarRepeaterTXThread::setOutputs(bool, bool, bool, bool)
 {
 }
 
-void CDStarRepeaterTXThread::setLogging(bool, const wxString&)
+void CDStarRepeaterTXThread::setLogging(bool, const std::string&)
 {
 }
 
-void CDStarRepeaterTXThread::setWhiteList(CCallsignList*)
-{
-}
+void CDStarRepeaterTXThread::setWhiteList(CCallsignList* list) { delete list; }
 
-void CDStarRepeaterTXThread::setBlackList(CCallsignList*)
-{
-}
+void CDStarRepeaterTXThread::setBlackList(CCallsignList* list) { delete list; }
 
-void CDStarRepeaterTXThread::setGreyList(CCallsignList*)
-{
-}
+void CDStarRepeaterTXThread::setGreyList(CCallsignList* list) { delete list; }
 
+// Drain and discard all modem events — this thread does not receive from RF.
 void CDStarRepeaterTXThread::receiveModem()
 {
 	for (;;) {
@@ -271,13 +275,13 @@ void CDStarRepeaterTXThread::receiveNetwork()
 			break;
 		} else if (type == NETWORK_HEADER) {		// A header
 			CHeaderData* header = m_protocolHandler->readHeader();
-			if (header != NULL) {
+			if (header != nullptr) {
 				::memcpy(m_lastData, NULL_FRAME_DATA_BYTES, DV_FRAME_LENGTH_BYTES);
 
 				processNetworkHeader(header);
 
-				m_headerTime.Start();
-				m_packetTime.Start();
+				m_headerTime = steady_clock::now();
+				m_packetTime = steady_clock::now();
 				m_packetCount   = 0U;
 				m_packetSilence = 0U;
 			}
@@ -296,18 +300,16 @@ void CDStarRepeaterTXThread::receiveNetwork()
 	}
 
 	// Have we missed any data frames?
-	if (m_state == DSRS_NETWORK && m_packetTime.Time() > 200L) {
-		unsigned int packetsNeeded = m_headerTime.Time() / DSTAR_FRAME_TIME_MS;
-
-		// wxLogMessage(wxT("Time: %u ms, need %u packets and received %u packets"), ms - m_headerMS, packetsNeeded, m_packetCount);
+	long long packetMs = duration_cast<milliseconds>(steady_clock::now() - m_packetTime).count();
+	if (m_state == DSRS_NETWORK && packetMs > 200L) {
+		long long headerMs = duration_cast<milliseconds>(steady_clock::now() - m_headerTime).count();
+		unsigned int packetsNeeded = (unsigned int)(headerMs / DSTAR_FRAME_TIME_MS);
 
 		if (packetsNeeded > m_packetCount) {
 			unsigned int count = packetsNeeded - m_packetCount;
 
 			if (count > 5U) {
 				count -= 2U;
-
-				// wxLogMessage(wxT("Inserting %u silence frames into the network data stream"), count);
 
 				// Create silence frames
 				for (unsigned int i = 0U; i < count; i++) {
@@ -319,13 +321,13 @@ void CDStarRepeaterTXThread::receiveNetwork()
 			}
 		}
 
-		m_packetTime.Start();
+		m_packetTime = steady_clock::now();
 	}
 }
 
 void CDStarRepeaterTXThread::transmitNetworkHeader(CHeaderData* header)
 {
-	wxLogMessage(wxT("Transmitting to - My: %s/%s  Your: %s  Rpt1: %s  Rpt2: %s  Flags: %02X %02X %02X"), header->getMyCall1().c_str(), header->getMyCall2().c_str(), header->getYourCall().c_str(), header->getRptCall1().c_str(), header->getRptCall2().c_str(), header->getFlag1(), header->getFlag2(), header->getFlag3());
+	wxLogMessage("Transmitting to - My: %s/%s  Your: %s  Rpt1: %s  Rpt2: %s  Flags: %02X %02X %02X", header->getMyCall1().c_str(), header->getMyCall2().c_str(), header->getYourCall().c_str(), header->getRptCall1().c_str(), header->getRptCall2().c_str(), header->getFlag1(), header->getFlag2(), header->getFlag3());
 
 	bool empty = m_networkQueue[m_readNum]->isEmpty();
 	if (!empty) {
@@ -356,7 +358,7 @@ void CDStarRepeaterTXThread::transmitNetworkHeader()
 		return;
 
 	CHeaderData* header = m_networkQueue[m_readNum]->getHeader();
-	if (header == NULL)
+	if (header == nullptr)
 		return;
 
 	m_modem->writeHeader(*header);
@@ -389,13 +391,13 @@ void CDStarRepeaterTXThread::transmitNetworkData()
 
 void CDStarRepeaterTXThread::processNetworkHeader(CHeaderData* header)
 {
-	wxASSERT(header != NULL);
+	assert(header != nullptr);
 
-	wxLogMessage(wxT("Network header received - My: %s/%s  Your: %s  Rpt1: %s  Rpt2: %s  Flags: %02X %02X %02X"), header->getMyCall1().c_str(), header->getMyCall2().c_str(), header->getYourCall().c_str(), header->getRptCall1().c_str(), header->getRptCall2().c_str(), header->getFlag1(), header->getFlag2(), header->getFlag3());
+	wxLogMessage("Network header received - My: %s/%s  Your: %s  Rpt1: %s  Rpt2: %s  Flags: %02X %02X %02X", header->getMyCall1().c_str(), header->getMyCall2().c_str(), header->getYourCall().c_str(), header->getRptCall1().c_str(), header->getRptCall2().c_str(), header->getFlag1(), header->getFlag2(), header->getFlag3());
 
 	// Is it for us?
-	if (!header->getRptCall2().IsSameAs(m_rptCallsign)) {
-		wxLogMessage(wxT("Invalid network RPT2 value, ignoring"));
+	if (header->getRptCall2() != m_rptCallsign) {
+		wxLogMessage("Invalid network RPT2 value, ignoring");
 		delete header;
 		return;
 	}
@@ -417,8 +419,8 @@ void CDStarRepeaterTXThread::processNetworkHeader(CHeaderData* header)
 
 unsigned int CDStarRepeaterTXThread::processNetworkFrame(unsigned char* data, unsigned int length, unsigned char seqNo)
 {
-	wxASSERT(data != NULL);
-	wxASSERT(length > 0U);
+	assert(data != nullptr);
+	assert(length > 0U);
 
 	bool end = (seqNo & 0x40U) == 0x40U;
 	if (end) {
@@ -499,7 +501,7 @@ void CDStarRepeaterTXThread::endOfNetworkData()
 	if (m_packetCount != 0U)
 		loss = float(m_packetSilence) / float(m_packetCount);
 
-	wxLogMessage(wxT("Stats for %s  Frames: %.1fs, Loss: %.1f%%, Packets: %u/%u"), m_txHeader->getMyCall1().c_str(), float(m_packetCount) / 50.0F, loss * 100.0F, m_packetSilence, m_packetCount);
+	wxLogMessage("Stats for %s  Frames: %.1fs, Loss: %.1f%%, Packets: %u/%u", m_txHeader->getMyCall1().c_str(), float(m_packetCount) / 50.0F, loss * 100.0F, m_packetSilence, m_packetCount);
 
 	m_state = DSRS_LISTENING;
 	m_watchdogTimer.stop();
@@ -517,15 +519,15 @@ CDStarRepeaterStatusData* CDStarRepeaterTXThread::getStatus()
 		loss = float(m_packetSilence) / float(m_packetCount);
 
 	if (m_state == DSRS_LISTENING)
-		return new CDStarRepeaterStatusData(wxEmptyString, wxEmptyString, wxEmptyString, wxEmptyString,
-				wxEmptyString, 0x00, 0x00, 0x00, m_tx, DSRXS_LISTENING, m_state, 0U, 0U, 0U, 0U, 0U, 0U, 0.0F,
-				wxEmptyString, wxEmptyString, wxEmptyString, wxEmptyString, wxEmptyString, wxEmptyString);
+		return new CDStarRepeaterStatusData(std::string(), std::string(), std::string(), std::string(),
+				std::string(), 0x00, 0x00, 0x00, m_tx, DSRXS_LISTENING, m_state, 0U, 0U, 0U, 0U, 0U, 0U, 0.0F,
+				std::string(), std::string(), std::string(), std::string(), std::string(), std::string());
 	else
 		return new CDStarRepeaterStatusData(m_txHeader->getMyCall1(), m_txHeader->getMyCall2(),
 				m_txHeader->getYourCall(), m_txHeader->getRptCall1(), m_txHeader->getRptCall2(),
 				m_txHeader->getFlag1(), m_txHeader->getFlag2(), m_txHeader->getFlag3(), m_tx, DSRXS_LISTENING,
-				m_state, 0U, 0U, 0U, 0U, 0U, 0U, loss * 100.0F, wxEmptyString, wxEmptyString, wxEmptyString, wxEmptyString,
-				wxEmptyString, wxEmptyString);
+				m_state, 0U, 0U, 0U, 0U, 0U, 0U, loss * 100.0F, std::string(), std::string(), std::string(), std::string(),
+				std::string(), std::string());
 }
 
 void CDStarRepeaterTXThread::clock(unsigned int ms)
@@ -546,26 +548,3 @@ void CDStarRepeaterTXThread::startup()
 {
 }
 
-void CDStarRepeaterTXThread::command1()
-{
-}
-
-void CDStarRepeaterTXThread::command2()
-{
-}
-
-void CDStarRepeaterTXThread::command3()
-{
-}
-
-void CDStarRepeaterTXThread::command4()
-{
-}
-
-void CDStarRepeaterTXThread::command5()
-{
-}
-
-void CDStarRepeaterTXThread::command6()
-{
-}

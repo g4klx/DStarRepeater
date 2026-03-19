@@ -15,13 +15,16 @@
 #include "SlowDataEncoder.h"
 #include "DStarDefines.h"
 
+#include <cassert>
+#include <cstring>
+
 const unsigned int  SLOW_DATA_BLOCK_SIZE = 6U;
 
 const unsigned int  SLOW_DATA_FULL_BLOCK_SIZE = SLOW_DATA_BLOCK_SIZE * 10U;
 
 CSlowDataEncoder::CSlowDataEncoder() :
-m_headerData(NULL),
-m_textData(NULL),
+m_headerData(nullptr),
+m_textData(nullptr),
 m_headerPtr(0U),
 m_textPtr(0U)
 {
@@ -40,7 +43,7 @@ CSlowDataEncoder::~CSlowDataEncoder()
 
 void CSlowDataEncoder::getHeaderData(unsigned char* data)
 {
-	wxASSERT(data != NULL);
+	assert(data != nullptr);
 
 	data[0U] = m_headerData[m_headerPtr++] ^ SCRAMBLER_BYTE1;
 	data[1U] = m_headerData[m_headerPtr++] ^ SCRAMBLER_BYTE2;
@@ -52,7 +55,7 @@ void CSlowDataEncoder::getHeaderData(unsigned char* data)
 
 void CSlowDataEncoder::getTextData(unsigned char* data)
 {
-	wxASSERT(data != NULL);
+	assert(data != nullptr);
 
 	data[0U] = m_textData[m_textPtr++] ^ SCRAMBLER_BYTE1;
 	data[1U] = m_textData[m_textPtr++] ^ SCRAMBLER_BYTE2;
@@ -85,56 +88,56 @@ void CSlowDataEncoder::setHeaderData(const CHeaderData& header)
 	m_headerData[1U]  = header.getFlag1();
 	m_headerData[2U]  = header.getFlag2();
 	m_headerData[3U]  = header.getFlag3();
-	m_headerData[4U]  = header.getRptCall2().GetChar(0);
-	m_headerData[5U]  = header.getRptCall2().GetChar(1);
+	m_headerData[4U]  = header.getRptCall2()[0];
+	m_headerData[5U]  = header.getRptCall2()[1];
 
 	m_headerData[6U]  = SLOW_DATA_TYPE_HEADER | 5U;
-	m_headerData[7U]  = header.getRptCall2().GetChar(2);
-	m_headerData[8U]  = header.getRptCall2().GetChar(3);
-	m_headerData[9U]  = header.getRptCall2().GetChar(4);
-	m_headerData[10U] = header.getRptCall2().GetChar(5);
-	m_headerData[11U] = header.getRptCall2().GetChar(6);
+	m_headerData[7U]  = header.getRptCall2()[2];
+	m_headerData[8U]  = header.getRptCall2()[3];
+	m_headerData[9U]  = header.getRptCall2()[4];
+	m_headerData[10U] = header.getRptCall2()[5];
+	m_headerData[11U] = header.getRptCall2()[6];
 
 	m_headerData[12U] = SLOW_DATA_TYPE_HEADER | 5U;
-	m_headerData[13U] = header.getRptCall2().GetChar(7);
-	m_headerData[14U] = header.getRptCall1().GetChar(0);
-	m_headerData[15U] = header.getRptCall1().GetChar(1);
-	m_headerData[16U] = header.getRptCall1().GetChar(2);
-	m_headerData[17U] = header.getRptCall1().GetChar(3);
+	m_headerData[13U] = header.getRptCall2()[7];
+	m_headerData[14U] = header.getRptCall1()[0];
+	m_headerData[15U] = header.getRptCall1()[1];
+	m_headerData[16U] = header.getRptCall1()[2];
+	m_headerData[17U] = header.getRptCall1()[3];
 
 	m_headerData[18U] = SLOW_DATA_TYPE_HEADER | 5U;
-	m_headerData[19U] = header.getRptCall1().GetChar(4);
-	m_headerData[20U] = header.getRptCall1().GetChar(5);
-	m_headerData[21U] = header.getRptCall1().GetChar(6);
-	m_headerData[22U] = header.getRptCall1().GetChar(7);
-	m_headerData[23U] = header.getYourCall().GetChar(0);
+	m_headerData[19U] = header.getRptCall1()[4];
+	m_headerData[20U] = header.getRptCall1()[5];
+	m_headerData[21U] = header.getRptCall1()[6];
+	m_headerData[22U] = header.getRptCall1()[7];
+	m_headerData[23U] = header.getYourCall()[0];
 
 	m_headerData[24U] = SLOW_DATA_TYPE_HEADER | 5U;
-	m_headerData[25U] = header.getYourCall().GetChar(1);
-	m_headerData[26U] = header.getYourCall().GetChar(2);
-	m_headerData[27U] = header.getYourCall().GetChar(3);
-	m_headerData[28U] = header.getYourCall().GetChar(4);
-	m_headerData[29U] = header.getYourCall().GetChar(5);
+	m_headerData[25U] = header.getYourCall()[1];
+	m_headerData[26U] = header.getYourCall()[2];
+	m_headerData[27U] = header.getYourCall()[3];
+	m_headerData[28U] = header.getYourCall()[4];
+	m_headerData[29U] = header.getYourCall()[5];
 
 	m_headerData[30U] = SLOW_DATA_TYPE_HEADER | 5U;
-	m_headerData[31U] = header.getYourCall().GetChar(6);
-	m_headerData[32U] = header.getYourCall().GetChar(7);
-	m_headerData[33U] = header.getMyCall1().GetChar(0);
-	m_headerData[34U] = header.getMyCall1().GetChar(1);
-	m_headerData[35U] = header.getMyCall1().GetChar(2);
+	m_headerData[31U] = header.getYourCall()[6];
+	m_headerData[32U] = header.getYourCall()[7];
+	m_headerData[33U] = header.getMyCall1()[0];
+	m_headerData[34U] = header.getMyCall1()[1];
+	m_headerData[35U] = header.getMyCall1()[2];
 
 	m_headerData[36U] = SLOW_DATA_TYPE_HEADER | 5U;
-	m_headerData[37U] = header.getMyCall1().GetChar(3);
-	m_headerData[38U] = header.getMyCall1().GetChar(4);
-	m_headerData[39U] = header.getMyCall1().GetChar(5);
-	m_headerData[40U] = header.getMyCall1().GetChar(6);
-	m_headerData[41U] = header.getMyCall1().GetChar(7);
+	m_headerData[37U] = header.getMyCall1()[3];
+	m_headerData[38U] = header.getMyCall1()[4];
+	m_headerData[39U] = header.getMyCall1()[5];
+	m_headerData[40U] = header.getMyCall1()[6];
+	m_headerData[41U] = header.getMyCall1()[7];
 
 	m_headerData[42U] = SLOW_DATA_TYPE_HEADER | 5U;
-	m_headerData[43U] = header.getMyCall2().GetChar(0);
-	m_headerData[44U] = header.getMyCall2().GetChar(1);
-	m_headerData[45U] = header.getMyCall2().GetChar(2);
-	m_headerData[46U] = header.getMyCall2().GetChar(3);
+	m_headerData[43U] = header.getMyCall2()[0];
+	m_headerData[44U] = header.getMyCall2()[1];
+	m_headerData[45U] = header.getMyCall2()[2];
+	m_headerData[46U] = header.getMyCall2()[3];
 
 	CCCITTChecksumReverse cksum;
 	cksum.update(m_headerData + 1U, 5U);
@@ -157,41 +160,40 @@ void CSlowDataEncoder::setHeaderData(const CHeaderData& header)
 	m_headerPtr = 0U;
 }
 
-void CSlowDataEncoder::setTextData(const wxString& text)
+void CSlowDataEncoder::setTextData(const std::string& text)
 {
-	if (text.IsEmpty())
+	if (text.empty())
 		return;
 
 	::memset(m_textData, 'f', SLOW_DATA_FULL_BLOCK_SIZE);
 
 	m_textData[0U]  = SLOW_DATA_TYPE_TEXT | 0U;
-	m_textData[1U]  = text.GetChar(0);
-	m_textData[2U]  = text.GetChar(1);
-	m_textData[3U]  = text.GetChar(2);
-	m_textData[4U]  = text.GetChar(3);
-	m_textData[5U]  = text.GetChar(4);
+	m_textData[1U]  = text[0];
+	m_textData[2U]  = text[1];
+	m_textData[3U]  = text[2];
+	m_textData[4U]  = text[3];
+	m_textData[5U]  = text[4];
 
 	m_textData[6U]  = SLOW_DATA_TYPE_TEXT | 1U;
-	m_textData[7U]  = text.GetChar(5);
-	m_textData[8U]  = text.GetChar(6);
-	m_textData[9U]  = text.GetChar(7);
-	m_textData[10U] = text.GetChar(8);
-	m_textData[11U] = text.GetChar(9);
+	m_textData[7U]  = text[5];
+	m_textData[8U]  = text[6];
+	m_textData[9U]  = text[7];
+	m_textData[10U] = text[8];
+	m_textData[11U] = text[9];
 
 	m_textData[12U] = SLOW_DATA_TYPE_TEXT | 2U;
-	m_textData[13U] = text.GetChar(10);
-	m_textData[14U] = text.GetChar(11);
-	m_textData[15U] = text.GetChar(12);
-	m_textData[16U] = text.GetChar(13);
-	m_textData[17U] = text.GetChar(14);
+	m_textData[13U] = text[10];
+	m_textData[14U] = text[11];
+	m_textData[15U] = text[12];
+	m_textData[16U] = text[13];
+	m_textData[17U] = text[14];
 
 	m_textData[18U] = SLOW_DATA_TYPE_TEXT | 3U;
-	m_textData[19U] = text.GetChar(15);
-	m_textData[20U] = text.GetChar(16);
-	m_textData[21U] = text.GetChar(17);
-	m_textData[22U] = text.GetChar(18);
-	m_textData[23U] = text.GetChar(19);
+	m_textData[19U] = text[15];
+	m_textData[20U] = text[16];
+	m_textData[21U] = text[17];
+	m_textData[22U] = text[18];
+	m_textData[23U] = text[19];
 
 	m_textPtr = 0U;
 }
-

@@ -25,9 +25,26 @@
 #include "Timer.h"
 #include "Modem.h"
 #include "Utils.h"
+#include "StdCompat.h"
 
-#include <wx/wx.h>
+#include <string>
+#include <vector>
+#include <cstdint>
 
+/*
+ * CAMBESlot - Holds one sequence-number slot's worth of AMBE data from all receivers.
+ *
+ * D-Star transmits 21 frames per super-frame (one data sync + 20 voice frames).
+ * CSplitController maintains 21 CAMBESlot objects, indexed by the D-Star sequence
+ * number.  When AMBE data arrives from multiple receivers for the same slot, the
+ * copy with the fewest AMBE error bits (lowest m_errors) is kept as the best copy.
+ *
+ * m_valid[n] - true when receiver n has contributed data for this slot.
+ * m_end[n]   - true when receiver n flagged end-of-transmission for this slot.
+ * m_best     - index of the receiver whose data is currently stored in m_ambe.
+ * m_timer    - deadline by which the slot must be forwarded to the repeater,
+ *              even if not all receivers have responded.
+ */
 class CAMBESlot {
 public:
 	CAMBESlot(unsigned int rxCount);
@@ -35,6 +52,7 @@ public:
 
 	void reset();
 
+	// Returns true when no receiver has deposited data yet (m_length == 0).
 	bool isFirst() const;
 
 	bool*          m_valid;
@@ -49,12 +67,47 @@ private:
 	unsigned int   m_rxCount;
 };
 
+/*
+ * CSplitController - Multi-receiver split-site repeater controller using UDP.
+ *
+ * Allows multiple geographically separated receive sites to feed a single
+ * repeater.  Each receiver and transmitter connects to the controller via UDP
+ * using the CGatewayProtocolHandler (ircDDB gateway wire protocol).
+ *
+ * Network protocol:
+ *   Receivers send NETWORK_HEADER and NETWORK_DATA packets, each containing
+ *   the stream ID, sequence number, AMBE payload, and an error count.
+ *   Transmitters receive NETWORK_HEADER and NETWORK_DATA forwarded by the
+ *   controller's transmit() method.
+ *   All remotes register by sending NETWORK_REGISTER with their name string;
+ *   the controller maps names to IP:port and runs a REGISTRATION_TIMEOUT timer
+ *   that expires if a remote goes silent.
+ *
+ * AMBE selection (best-copy diversity):
+ *   For each D-Star sequence number slot (0-20), AMBE frames from all registered
+ *   receivers are buffered in the corresponding CAMBESlot.  The frame with the
+ *   fewest AMBE error bits wins and is forwarded to the repeater when the slot
+ *   timer expires.  If no receiver provides data for a slot, a silence frame
+ *   (NULL_FRAME_DATA_BYTES) is substituted.
+ *
+ * Resequencing:
+ *   m_inSeqNo tracks the next expected sequence number from any receiver.
+ *   m_outSeqNo tracks the next slot to be forwarded to the repeater.
+ *   Out-of-order packets that are more than 18 slots ahead are discarded.
+ *
+ * Header forwarding (sendHeader()):
+ *   Deferred until the first data slot is ready to be forwarded.  This ensures
+ *   the repeater receives header + data without a gap, and means m_headerSent
+ *   guards against duplicate header injection.
+ *
+ * timeout: per-slot wait time in milliseconds added to each slot's timer on
+ *   top of the expected frame arrival time.  Increasing timeout improves
+ *   diversity at the cost of added latency.
+ */
 class CSplitController : public CModem {
 public:
-	CSplitController(const wxString& localAddress, unsigned int localPort, const wxArrayString& transmitterNames, const wxArrayString& receiverNames, unsigned int timeout);
+	CSplitController(const std::string& localAddress, unsigned int localPort, const std::vector<std::string>& transmitterNames, const std::vector<std::string>& receiverNames, unsigned int timeout);
 	virtual ~CSplitController();
-
-	virtual void* Entry();
 
 	virtual bool start();
 
@@ -65,9 +118,11 @@ public:
 	virtual bool writeData(const unsigned char* data, unsigned int length, bool end);
 
 private:
+	void entry();
+
 	CGatewayProtocolHandler    m_handler;
-	wxArrayString              m_transmitterNames;
-	wxArrayString              m_receiverNames;
+	std::vector<std::string>   m_transmitterNames;
+	std::vector<std::string>   m_receiverNames;
 	unsigned int               m_timeout;
 	unsigned int               m_txCount;
 	unsigned int               m_rxCount;
@@ -78,14 +133,14 @@ private:
 	unsigned int*              m_rxPorts;
 	CTimer**                   m_rxTimers;
 	CRingBuffer<unsigned char> m_txData;
-	wxUint16                   m_outId;
-	wxUint8                    m_outSeq;
+	uint16_t                   m_outId;
+	uint8_t                    m_outSeq;
 	CTimer                     m_endTimer;
 	bool                       m_listening;
-	wxUint8                    m_inSeqNo;
-	wxUint8                    m_outSeqNo;
+	uint8_t                    m_inSeqNo;
+	uint8_t                    m_outSeqNo;
 	unsigned char*             m_header;
-	wxUint16*                  m_id;
+	uint16_t*                  m_id;
 	bool*                      m_valid;
 	CAMBESlot**                m_slots;
 	bool                       m_headerSent;
@@ -94,13 +149,26 @@ private:
 	unsigned int*              m_missed;
 	unsigned int               m_silence;
 
+	// Drains m_txData and forwards header/data/EOT to all registered transmitters.
 	void transmit();
+	// Reads all pending UDP packets and dispatches them to processHeader/processAMBE
+	// or updates remote registrations.
 	void receive();
+	// Advances all timers by ms; expires slot timers and forwards data to m_rxData.
 	void timers(unsigned int ms);
-	void processHeader(unsigned int n, wxUint16 id, const unsigned char* header, unsigned int length);
-	void processAMBE(unsigned int n, wxUint16 id, const unsigned char* ambe, unsigned int length, wxUint8 seqNo, unsigned char errors);
+	// Records a header from receiver n.  First header starts the slot timers and
+	// initialises per-receiver tracking; subsequent headers from other receivers
+	// are validated by memcmp against the first.
+	void processHeader(unsigned int n, uint16_t id, const unsigned char* header, unsigned int length);
+	// Deposits an AMBE frame from receiver n into the appropriate sequence slot.
+	// Keeps the frame with the lowest error count; discards frames > 18 slots ahead.
+	void processAMBE(unsigned int n, uint16_t id, const unsigned char* ambe, unsigned int length, uint8_t seqNo, unsigned char errors);
+	// Returns true when all valid receivers have signalled end-of-transmission
+	// and none are still active in this slot.
 	bool isEnd(const CAMBESlot& slot) const;
+	// Queues the buffered header into m_rxData; must be called with m_mutex held.
 	void sendHeader();
+	// Logs per-receiver packet counts, best-copy proportions, and missed frames.
 	void printStats() const;
 };
 

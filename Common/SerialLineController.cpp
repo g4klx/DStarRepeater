@@ -19,12 +19,8 @@
 
 #include "SerialLineController.h"
 
+#if !defined(_WIN32)
 #include <sys/types.h>
-
-#if defined(__WINDOWS__)
-#include <setupapi.h>
-#include <winioctl.h>
-#else
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <cerrno>
@@ -34,268 +30,17 @@
 #endif
 
 
-#if defined(__WINDOWS__)
+#if !defined(_WIN32)
 
-CSerialLineController::CSerialLineController(const wxString& device, unsigned int config) :
-m_device(device),
-m_config(config),
-m_rts(false),
-m_dtr(false),
-m_handle(INVALID_HANDLE_VALUE)
-{
-	wxASSERT(!device.IsEmpty());
-	wxASSERT(config == 1U || config == 2U || config == 3U);
-}
-
-CSerialLineController::~CSerialLineController()
-{
-}
-
-bool CSerialLineController::open()
-{
-	wxASSERT(m_handle == INVALID_HANDLE_VALUE);
-
-	DWORD errCode;
-
-	m_handle = ::CreateFile(m_device.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-	if (m_handle == INVALID_HANDLE_VALUE) {
-		wxLogError(wxT("Cannot open device - %s"), m_device.c_str());
-		return false;
-	}
-
-	DCB dcb;
-	if (::GetCommState(m_handle, &dcb) == 0) {
-		wxLogError(wxT("Cannot get the attributes for %s"), m_device.c_str());
-		::ClearCommError(m_handle, &errCode, NULL);
-		::CloseHandle(m_handle);
-		return false;
-	}
-
-	dcb.fOutxCtsFlow = FALSE;
-	dcb.fOutxDsrFlow = FALSE;
-	dcb.fDtrControl  = DTR_CONTROL_DISABLE;
-	dcb.fRtsControl  = RTS_CONTROL_DISABLE;
-
-	if (::SetCommState(m_handle, &dcb) == 0) {
-		wxLogError(wxT("Cannot set the attributes for %s"), m_device.c_str());
-		::ClearCommError(m_handle, &errCode, NULL);
-		::CloseHandle(m_handle);
-		return false;
-	}
-
-	if (::EscapeCommFunction(m_handle, CLRDTR) == 0) {
-		wxLogError(wxT("Cannot clear DTR for %s"), m_device.c_str());
-		::ClearCommError(m_handle, &errCode, NULL);
-		::CloseHandle(m_handle);
-		return false;
-	}
-
-	if (::EscapeCommFunction(m_handle, CLRRTS) == 0) {
-		wxLogError(wxT("Cannot clear RTS for %s"), m_device.c_str());
-		::ClearCommError(m_handle, &errCode, NULL);
-		::CloseHandle(m_handle);
-		return false;
-	}
-
-	::ClearCommError(m_handle, &errCode, NULL);
-
-	return true;
-}
-
-bool CSerialLineController::getCD() const
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-
-	DWORD status;
-	DWORD errCode;
-	if (::GetCommModemStatus(m_handle, &status) == 0) {
-		::ClearCommError(m_handle, &errCode, NULL);
-		return false;
-	}
-
-	return (status & MS_RLSD_ON) == MS_RLSD_ON;
-}
-
-bool CSerialLineController::getCTS() const
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-
-	DWORD status;
-	DWORD errCode;
-	if (::GetCommModemStatus(m_handle, &status) == 0) {
-		::ClearCommError(m_handle, &errCode, NULL);
-		return false;
-	}
-
-	return (status & MS_CTS_ON) == MS_CTS_ON;
-}
-
-bool CSerialLineController::getDSR() const
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-
-	DWORD status;
-	DWORD errCode;
-	if (::GetCommModemStatus(m_handle, &status) == 0) {
-		::ClearCommError(m_handle, &errCode, NULL);
-		return false;
-	}
-
-	return (status & MS_DSR_ON) == MS_DSR_ON;
-}
-
-bool CSerialLineController::setRTS(bool set)
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-
-	if (set == m_rts)
-		return true;
-
-	DWORD rts = (set) ? SETRTS : CLRRTS;
-	DWORD errCode;
-
-	if (::EscapeCommFunction(m_handle, rts) == 0) {
-		::ClearCommError(m_handle, &errCode, NULL);
-		return false;
-	}
-
-	m_rts = set;
-
-	return true;
-}
-
-bool CSerialLineController::setDTR(bool set)
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-
-	if (set == m_dtr)
-		return true;
-
-	DWORD dtr = (set) ? SETDTR : CLRDTR;
-	DWORD errCode;
-
-	if (::EscapeCommFunction(m_handle, dtr) == 0) {
-		::ClearCommError(m_handle, &errCode, NULL);
-		return false;
-	}
-
-	m_dtr = set;
-
-	return true;
-}
-
-void CSerialLineController::getDigitalInputs(bool& inp1, bool& inp2, bool& inp3, bool& inp4, bool& inp5)
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-
-	inp1 = inp2 = inp3 = inp4 = inp5 = false;
-
-	DWORD status;
-	DWORD errCode;
-	if (::GetCommModemStatus(m_handle, &status) == 0) {
-		::ClearCommError(m_handle, &errCode, NULL);
-		return;
-	}
-
-	switch (m_config) {
-		case 1U:
-			inp1 = (status & MS_DSR_ON) == MS_DSR_ON;
-			inp2 = (status & MS_CTS_ON) == MS_CTS_ON;
-			break;
-		case 2U:
-			inp1 = (status & MS_RLSD_ON) == MS_RLSD_ON;
-			inp2 = (status & MS_RLSD_ON) == MS_RLSD_ON;
-			break;
-		case 3U:
-			inp1 = (status & MS_RLSD_ON) == MS_RLSD_ON;
-			break;
-		default:
-			wxLogError(wxT("Unknown serial config - %u"), m_config);
-			break;
-	}
-}
-
-void CSerialLineController::setDigitalOutputs(bool outp1, bool, bool outp3, bool, bool, bool, bool, bool)
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-
-	switch (m_config) {
-		case 1U:
-			if (outp1 != m_dtr) {
-				DWORD dtr = (outp1) ? SETDTR : CLRDTR;
-				DWORD errCode;
-
-				if (::EscapeCommFunction(m_handle, dtr) == 0) {
-					::ClearCommError(m_handle, &errCode, NULL);
-					return;
-				}
-
-				m_dtr = outp1;
-			}
-			if (outp3 != m_rts) {
-				DWORD rts = (outp3) ? SETRTS : CLRRTS;
-				DWORD errCode;
-
-				if (::EscapeCommFunction(m_handle, rts) == 0) {
-					::ClearCommError(m_handle, &errCode, NULL);
-					return;
-				}
-
-				m_rts = outp3;
-			}
-			break;
-
-		case 2U:
-		case 3U:
-			if (outp1 != m_rts) {
-				DWORD rts = (outp1) ? SETRTS : CLRRTS;
-				DWORD errCode;
-
-				if (::EscapeCommFunction(m_handle, rts) == 0) {
-					::ClearCommError(m_handle, &errCode, NULL);
-					return;
-				}
-
-				m_rts = outp1;
-			}
-			if (outp3 != m_dtr) {
-				DWORD dtr = (outp3) ? SETDTR : CLRDTR;
-				DWORD errCode;
-
-				if (::EscapeCommFunction(m_handle, dtr) == 0) {
-					::ClearCommError(m_handle, &errCode, NULL);
-					return;
-				}
-
-				m_dtr = outp3;
-			}
-			break;
-
-		default:
-			wxLogError(wxT("Unknown serial config - %u"), m_config);
-			break;
-	}
-}
-
-void CSerialLineController::close()
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-
-	::CloseHandle(m_handle);
-	m_handle = INVALID_HANDLE_VALUE;
-}
-
-#else
-
-CSerialLineController::CSerialLineController(const wxString& device, unsigned int config) :
+CSerialLineController::CSerialLineController(const std::string& device, unsigned int config) :
 m_device(device),
 m_config(config),
 m_rts(false),
 m_dtr(false),
 m_fd(-1)
 {
-	wxASSERT(!device.IsEmpty());
-	wxASSERT(config == 1U || config == 2U || config == 3U);
+	assert(!device.empty());
+	assert(config == 1U || config == 2U || config == 3U);
 }
 
 CSerialLineController::~CSerialLineController()
@@ -304,23 +49,23 @@ CSerialLineController::~CSerialLineController()
 
 bool CSerialLineController::open()
 {
-	wxASSERT(m_fd == -1);
+	assert(m_fd == -1);
 
-	m_fd = ::open(m_device.mb_str(), O_RDWR | O_NOCTTY | O_NDELAY, 0);
+	m_fd = ::open(m_device.c_str(), O_RDWR | O_NOCTTY | O_NDELAY, 0);
 	if (m_fd < 0) {
-		wxLogError(wxT("Cannot open device - %s"), m_device.c_str());
+		::fprintf(stderr, "Cannot open device - %s\n", m_device.c_str());
 		return false;
 	}
 
 	if (::isatty(m_fd) == 0) {
-		wxLogError(wxT("%s is not a TTY device"), m_device.c_str());
+		::fprintf(stderr, "%s is not a TTY device\n", m_device.c_str());
 		::close(m_fd);
 		return false;
 	}
 
 	termios termios;
 	if (::tcgetattr(m_fd, &termios) < 0) {
-		wxLogError(wxT("Cannot get the attributes for %s"), m_device.c_str());
+		::fprintf(stderr, "Cannot get the attributes for %s\n", m_device.c_str());
 		::close(m_fd);
 		return false;
 	}
@@ -334,14 +79,14 @@ bool CSerialLineController::open()
 	termios.c_cc[VTIME] = 10;
 
 	if (::tcsetattr(m_fd, TCSANOW, &termios) < 0) {
-		wxLogError(wxT("Cannot set the attributes for %s"), m_device.c_str());
+		::fprintf(stderr, "Cannot set the attributes for %s\n", m_device.c_str());
 		::close(m_fd);
 		return false;
 	}
 
 	unsigned int y;
 	if (::ioctl(m_fd, TIOCMGET, &y) < 0) {
-		wxLogError(wxT("Cannot get the modem status bits for %s"), m_device.c_str());
+		::fprintf(stderr, "Cannot get the modem status bits for %s\n", m_device.c_str());
 		::close(m_fd);
 		return false;
 	}
@@ -350,7 +95,7 @@ bool CSerialLineController::open()
 	y &= ~TIOCM_RTS;
 
 	if (::ioctl(m_fd, TIOCMSET, &y) < 0) {
-		wxLogError(wxT("Cannot set the modem status bits for %s"), m_device.c_str());
+		::fprintf(stderr, "Cannot set the modem status bits for %s\n", m_device.c_str());
 		::close(m_fd);
 		return false;
 	}
@@ -360,7 +105,7 @@ bool CSerialLineController::open()
 
 bool CSerialLineController::getCD() const
 {
-	wxASSERT(m_fd != -1);
+	assert(m_fd != -1);
 
 	unsigned int y;
 	if (::ioctl(m_fd, TIOCMGET, &y) < 0)
@@ -371,7 +116,7 @@ bool CSerialLineController::getCD() const
 
 bool CSerialLineController::getCTS() const
 {
-	wxASSERT(m_fd != -1);
+	assert(m_fd != -1);
 
 	unsigned int y;
 	if (::ioctl(m_fd, TIOCMGET, &y) < 0)
@@ -382,7 +127,7 @@ bool CSerialLineController::getCTS() const
 
 bool CSerialLineController::getDSR() const
 {
-	wxASSERT(m_fd != -1);
+	assert(m_fd != -1);
 
 	unsigned int y;
 	if (::ioctl(m_fd, TIOCMGET, &y) < 0)
@@ -393,7 +138,7 @@ bool CSerialLineController::getDSR() const
 
 bool CSerialLineController::setRTS(bool set)
 {
-	wxASSERT(m_fd != -1);
+	assert(m_fd != -1);
 
 	if (set == m_rts)
 		return true;
@@ -417,7 +162,7 @@ bool CSerialLineController::setRTS(bool set)
 
 bool CSerialLineController::setDTR(bool set)
 {
-	wxASSERT(m_fd != -1);
+	assert(m_fd != -1);
 
 	if (set == m_dtr)
 		return true;
@@ -441,7 +186,7 @@ bool CSerialLineController::setDTR(bool set)
 
 void CSerialLineController::getDigitalInputs(bool& inp1, bool& inp2, bool& inp3, bool& inp4, bool& inp5)
 {
-	wxASSERT(m_fd != -1);
+	assert(m_fd != -1);
 
 	inp1 = inp2 = inp3 = inp4 = inp5 = false;
 
@@ -462,14 +207,14 @@ void CSerialLineController::getDigitalInputs(bool& inp1, bool& inp2, bool& inp3,
 			inp1 = (y & TIOCM_CD) == TIOCM_CD;
 			break;
 		default:
-			wxLogError(wxT("Unknown serial config - %u"), m_config);
+			::fprintf(stderr, "Unknown serial config - %u\n", m_config);
 			break;
 	}
 }
 
 void CSerialLineController::setDigitalOutputs(bool outp1, bool, bool outp3, bool, bool, bool, bool, bool)
 {
-	wxASSERT(m_fd != -1);
+	assert(m_fd != -1);
 
 	if (m_config == 1U) {
 		if (outp1 == m_dtr && outp3 == m_rts)
@@ -518,16 +263,188 @@ void CSerialLineController::setDigitalOutputs(bool outp1, bool, bool outp3, bool
 		m_rts = outp1;
 		m_dtr = outp3;
 	} else {
-		wxLogError(wxT("Unknown serial config - %u"), m_config);
+		::fprintf(stderr, "Unknown serial config - %u\n", m_config);
 	}
 }
 
 void CSerialLineController::close()
 {
-	wxASSERT(m_fd != -1);
+	assert(m_fd != -1);
 
 	::close(m_fd);
 	m_fd = -1;
 }
 
-#endif
+#else // _WIN32
+
+CSerialLineController::CSerialLineController(const std::string& device, unsigned int config) :
+m_device(device),
+m_config(config),
+m_rts(false),
+m_dtr(false),
+m_handle(INVALID_HANDLE_VALUE)
+{
+	assert(!device.empty());
+	assert(config == 1U || config == 2U || config == 3U);
+}
+
+CSerialLineController::~CSerialLineController()
+{
+}
+
+bool CSerialLineController::open()
+{
+	assert(m_handle == INVALID_HANDLE_VALUE);
+
+	// On Windows, ports above COM9 require the \\.\COMn prefix.
+	std::string path = "\\\\.\\" + m_device;
+
+	m_handle = ::CreateFileA(path.c_str(),
+	                         GENERIC_READ | GENERIC_WRITE,
+	                         0,
+	                         nullptr,
+	                         OPEN_EXISTING,
+	                         FILE_ATTRIBUTE_NORMAL,
+	                         nullptr);
+	if (m_handle == INVALID_HANDLE_VALUE) {
+		::fprintf(stderr, "Cannot open device - %s\n", m_device.c_str());
+		return false;
+	}
+
+	// Deassert both DTR and RTS on open, matching the POSIX behaviour.
+	::EscapeCommFunction(m_handle, CLRDTR);
+	::EscapeCommFunction(m_handle, CLRRTS);
+
+	m_rts = false;
+	m_dtr = false;
+
+	return true;
+}
+
+bool CSerialLineController::getCD() const
+{
+	assert(m_handle != INVALID_HANDLE_VALUE);
+
+	DWORD status = 0U;
+	if (!::GetCommModemStatus(m_handle, &status))
+		return false;
+
+	return (status & MS_RLSD_ON) != 0U;
+}
+
+bool CSerialLineController::getCTS() const
+{
+	assert(m_handle != INVALID_HANDLE_VALUE);
+
+	DWORD status = 0U;
+	if (!::GetCommModemStatus(m_handle, &status))
+		return false;
+
+	return (status & MS_CTS_ON) != 0U;
+}
+
+bool CSerialLineController::getDSR() const
+{
+	assert(m_handle != INVALID_HANDLE_VALUE);
+
+	DWORD status = 0U;
+	if (!::GetCommModemStatus(m_handle, &status))
+		return false;
+
+	return (status & MS_DSR_ON) != 0U;
+}
+
+bool CSerialLineController::setRTS(bool set)
+{
+	assert(m_handle != INVALID_HANDLE_VALUE);
+
+	if (set == m_rts)
+		return true;
+
+	if (!::EscapeCommFunction(m_handle, set ? SETRTS : CLRRTS))
+		return false;
+
+	m_rts = set;
+
+	return true;
+}
+
+bool CSerialLineController::setDTR(bool set)
+{
+	assert(m_handle != INVALID_HANDLE_VALUE);
+
+	if (set == m_dtr)
+		return true;
+
+	if (!::EscapeCommFunction(m_handle, set ? SETDTR : CLRDTR))
+		return false;
+
+	m_dtr = set;
+
+	return true;
+}
+
+void CSerialLineController::getDigitalInputs(bool& inp1, bool& inp2, bool& inp3, bool& inp4, bool& inp5)
+{
+	assert(m_handle != INVALID_HANDLE_VALUE);
+
+	inp1 = inp2 = inp3 = inp4 = inp5 = false;
+
+	DWORD status = 0U;
+	if (!::GetCommModemStatus(m_handle, &status))
+		return;
+
+	switch (m_config) {
+		case 1U:
+			inp1 = (status & MS_DSR_ON)  != 0U;
+			inp2 = (status & MS_CTS_ON)  != 0U;
+			break;
+		case 2U:
+			inp1 = (status & MS_RLSD_ON) != 0U;
+			inp2 = (status & MS_RLSD_ON) != 0U;
+			break;
+		case 3U:
+			inp1 = (status & MS_RLSD_ON) != 0U;
+			break;
+		default:
+			::fprintf(stderr, "Unknown serial config - %u\n", m_config);
+			break;
+	}
+}
+
+void CSerialLineController::setDigitalOutputs(bool outp1, bool, bool outp3, bool, bool, bool, bool, bool)
+{
+	assert(m_handle != INVALID_HANDLE_VALUE);
+
+	if (m_config == 1U) {
+		if (outp1 == m_dtr && outp3 == m_rts)
+			return;
+
+		::EscapeCommFunction(m_handle, outp1 ? SETDTR : CLRDTR);
+		::EscapeCommFunction(m_handle, outp3 ? SETRTS : CLRRTS);
+
+		m_dtr = outp1;
+		m_rts = outp3;
+	} else if (m_config == 2U || m_config == 3U) {
+		if (outp1 == m_rts && outp3 == m_dtr)
+			return;
+
+		::EscapeCommFunction(m_handle, outp1 ? SETRTS : CLRRTS);
+		::EscapeCommFunction(m_handle, outp3 ? SETDTR : CLRDTR);
+
+		m_rts = outp1;
+		m_dtr = outp3;
+	} else {
+		::fprintf(stderr, "Unknown serial config - %u\n", m_config);
+	}
+}
+
+void CSerialLineController::close()
+{
+	assert(m_handle != INVALID_HANDLE_VALUE);
+
+	::CloseHandle(m_handle);
+	m_handle = INVALID_HANDLE_VALUE;
+}
+
+#endif // _WIN32

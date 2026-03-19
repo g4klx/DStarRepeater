@@ -19,9 +19,14 @@
 #ifndef UDPReaderWriter_H
 #define UDPReaderWriter_H
 
-#include <wx/wx.h>
+#include "StdCompat.h"
 
-#if !defined(__WINDOWS__)
+// Platform socket headers — Winsock on Windows, POSIX on everything else.
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+#else
 #include <netdb.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -32,15 +37,28 @@
 #include <errno.h>
 #endif
 
+/*
+ * Thin wrapper around a single UDP socket.
+ *
+ * open() creates and binds a SOCK_DGRAM socket to the configured address and
+ * port.  read() is non-blocking (uses select() with a zero timeout); write()
+ * sends to an explicit destination address supplied by the caller.
+ *
+ * The static lookup() method resolves a hostname or dotted-decimal string to
+ * an in_addr, returning INADDR_NONE on failure.
+ */
 class CUDPReaderWriter {
 public:
-	CUDPReaderWriter(const wxString& address, unsigned int port);
+	CUDPReaderWriter(const std::string& address, unsigned int port);
 	~CUDPReaderWriter();
 
-	static in_addr lookup(const wxString& hostName);
+	// Resolves hostname or dotted-decimal IP string to in_addr.
+	// Tries inet_addr() first; falls back to getaddrinfo() for hostnames.
+	static in_addr lookup(const std::string& hostName);
 
 	bool open();
 
+	// Returns the number of bytes received, 0 if no datagram was ready, or -1 on error.
 	int  read(unsigned char* buffer, unsigned int length, in_addr& address, unsigned int& port);
 	bool write(const unsigned char* buffer, unsigned int length, const in_addr& address, unsigned int port);
 
@@ -49,10 +67,14 @@ public:
 	unsigned int getPort() const;
 
 private:
-	wxString       m_address;
+	std::string    m_address;
 	unsigned short m_port;
 	in_addr        m_addr;
+#if defined(_WIN32)
+	SOCKET         m_fd;
+#else
 	int            m_fd;
+#endif
 };
 
 #endif

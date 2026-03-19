@@ -16,12 +16,21 @@
 
 #include "FIRFilter.h"
 
+/*
+ * GMSK modulator for D-Star 4800 bps transmissions.
+ *
+ * Converts a single NRZ bit into a sequence of float audio samples using a
+ * Gaussian FIR pulse-shaping filter (BT=0.5).  The output sample buffer must
+ * be pre-allocated by the caller; code() returns the number of samples written.
+ * setInvert() reverses the polarity of the modulated signal for hardware that
+ * requires the opposite sense.
+ */
 class CDStarGMSKModulator {
 public:
 	CDStarGMSKModulator();
 	~CDStarGMSKModulator();
 
-	unsigned int code(bool bit, wxFloat32* buffer, unsigned int length);
+	unsigned int code(bool bit, float* buffer, unsigned int length);
 
 	void setInvert(bool set);
 

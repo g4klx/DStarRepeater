@@ -18,80 +18,72 @@
 
 #include "UDPReaderWriter.h"
 
-#if !defined(__WINDOWS__)
 #include <cerrno>
+#include <cstdio>
+#include <cstring>
+
+// On Windows, Winsock must be initialised before any socket call and cleaned
+// up at program exit.  The file-static WinsockInit object handles this via
+// its constructor/destructor, which run at program startup and shutdown.
+#if defined(_WIN32)
+namespace {
+struct WinsockInit {
+	WinsockInit()  { WSADATA d; WSAStartup(MAKEWORD(2, 2), &d); }
+	~WinsockInit() { WSACleanup(); }
+};
+static WinsockInit s_wsinit;
+}
 #endif
 
-
-CUDPReaderWriter::CUDPReaderWriter(const wxString& address, unsigned int port) :
+CUDPReaderWriter::CUDPReaderWriter(const std::string& address, unsigned int port) :
 m_address(address),
 m_port(port),
 m_addr(),
+#if defined(_WIN32)
+m_fd(INVALID_SOCKET)
+#else
 m_fd(-1)
-{
-#if defined(__WINDOWS__)
-	WSAData data;
-	int wsaRet = ::WSAStartup(MAKEWORD(2, 2), &data);
-	if (wsaRet != 0)
-		wxLogError(wxT("Error from WSAStartup"));
 #endif
+{
 }
 
 CUDPReaderWriter::~CUDPReaderWriter()
 {
-#if defined(__WINDOWS__)
-	::WSACleanup();
-#endif
 }
 
-in_addr CUDPReaderWriter::lookup(const wxString& hostname)
+in_addr CUDPReaderWriter::lookup(const std::string& hostname)
 {
 	in_addr addr;
-#if defined(WIN32)
-	unsigned long address = ::inet_addr(hostname.mb_str());
-	if (address != INADDR_NONE && address != INADDR_ANY) {
-		addr.s_addr = address;
-		return addr;
-	}
 
-	struct hostent* hp = ::gethostbyname(hostname.mb_str());
-	if (hp != NULL) {
-		::memcpy(&addr, hp->h_addr_list[0], sizeof(struct in_addr));
-		return addr;
-	}
-
-	wxLogError(wxT("Cannot find address for host %s"), hostname.c_str());
-
-	addr.s_addr = INADDR_NONE;
-	return addr;
-#else
-	in_addr_t address = ::inet_addr(hostname.mb_str());
+	in_addr_t address = ::inet_addr(hostname.c_str());
 	if (address != in_addr_t(-1)) {
 		addr.s_addr = address;
 		return addr;
 	}
 
-	struct hostent* hp = ::gethostbyname(hostname.mb_str());
-	if (hp != NULL) {
-		::memcpy(&addr, hp->h_addr_list[0], sizeof(struct in_addr));
+	struct addrinfo hints{}, *res = nullptr;
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_DGRAM;
+	if (::getaddrinfo(hostname.c_str(), nullptr, &hints, &res) == 0 && res != nullptr) {
+		addr = reinterpret_cast<struct sockaddr_in*>(res->ai_addr)->sin_addr;
+		::freeaddrinfo(res);
 		return addr;
 	}
 
-	wxLogError(wxT("Cannot find address for host %s"), hostname.c_str());
-
+	::fprintf(stderr, "Cannot find address for host %s\n", hostname.c_str());
 	addr.s_addr = INADDR_NONE;
 	return addr;
-#endif
 }
 
 bool CUDPReaderWriter::open()
 {
 	m_fd = ::socket(PF_INET, SOCK_DGRAM, 0);
-	if (m_fd < 0) {
-#if defined(__WINDOWS__)
-		wxLogError(wxT("Cannot create the UDP socket, err: %lu"), ::GetLastError());
+#if defined(_WIN32)
+	if (m_fd == INVALID_SOCKET) {
+		::fprintf(stderr, "Cannot create the UDP socket, err: %d\n", WSAGetLastError());
 #else
-		wxLogError(wxT("Cannot create the UDP socket, err: %d"), errno);
+	if (m_fd < 0) {
+		::fprintf(stderr, "Cannot create the UDP socket, err: %d\n", errno);
 #endif
 		return false;
 	}
@@ -103,33 +95,29 @@ bool CUDPReaderWriter::open()
 		addr.sin_port        = htons(m_port);
 		addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-		if (!m_address.IsEmpty()) {
-#if defined(__WINDOWS__)
-			addr.sin_addr.s_addr = ::inet_addr(m_address.mb_str());
-#else
-			addr.sin_addr.s_addr = ::inet_addr(m_address.mb_str());
-#endif
+		if (!m_address.empty()) {
+			addr.sin_addr.s_addr = ::inet_addr(m_address.c_str());
 			if (addr.sin_addr.s_addr == INADDR_NONE) {
-				wxLogError(wxT("The address is invalid - %s"), m_address.c_str());
+				::fprintf(stderr, "The address is invalid - %s\n", m_address.c_str());
 				return false;
 			}
 		}
 
 		int reuse = 1;
 		if (::setsockopt(m_fd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) == -1) {
-#if defined(__WINDOWS__)
-			wxLogError(wxT("Cannot set the UDP socket option (port: %u), err: %lu"), m_port, ::GetLastError());
+#if defined(_WIN32)
+			::fprintf(stderr, "Cannot set the UDP socket option (port: %u), err: %d\n", m_port, WSAGetLastError());
 #else
-			wxLogError(wxT("Cannot set the UDP socket option (port: %u), err: %d"), m_port, errno);
+			::fprintf(stderr, "Cannot set the UDP socket option (port: %u), err: %d\n", m_port, errno);
 #endif
 			return false;
 		}
 
 		if (::bind(m_fd, (sockaddr*)&addr, sizeof(sockaddr_in)) == -1) {
-#if defined(__WINDOWS__)
-			wxLogError(wxT("Cannot bind the UDP address (port: %u), err: %lu"), m_port, ::GetLastError());
+#if defined(_WIN32)
+			::fprintf(stderr, "Cannot bind the UDP address (port: %u), err: %d\n", m_port, WSAGetLastError());
 #else
-			wxLogError(wxT("Cannot bind the UDP address (port: %u), err: %d"), m_port, errno);
+			::fprintf(stderr, "Cannot bind the UDP address (port: %u), err: %d\n", m_port, errno);
 #endif
 			return false;
 		}
@@ -143,23 +131,23 @@ int CUDPReaderWriter::read(unsigned char* buffer, unsigned int length, in_addr& 
 	// Check that the readfrom() won't block
 	fd_set readFds;
 	FD_ZERO(&readFds);
-#if defined(__WINDOWS__)
-	FD_SET((unsigned int)m_fd, &readFds);
-#else
 	FD_SET(m_fd, &readFds);
-#endif
 
 	// Return immediately
 	timeval tv;
 	tv.tv_sec  = 0L;
 	tv.tv_usec = 0L;
 
-	int ret = ::select(m_fd + 1, &readFds, NULL, NULL, &tv);
-	if (ret < 0) {
-#if defined(__WINDOWS__)
-		wxLogError(wxT("Error returned from UDP select (port: %u), err: %lu"), m_port, ::GetLastError());
+#if defined(_WIN32)
+	int ret = ::select(0, &readFds, nullptr, nullptr, &tv);
 #else
-		wxLogError(wxT("Error returned from UDP select (port: %u), err: %d"), m_port, errno);
+	int ret = ::select(m_fd + 1, &readFds, nullptr, nullptr, &tv);
+#endif
+	if (ret < 0) {
+#if defined(_WIN32)
+		::fprintf(stderr, "Error returned from UDP select (port: %u), err: %d\n", m_port, WSAGetLastError());
+#else
+		::fprintf(stderr, "Error returned from UDP select (port: %u), err: %d\n", m_port, errno);
 #endif
 		return -1;
 	}
@@ -168,18 +156,18 @@ int CUDPReaderWriter::read(unsigned char* buffer, unsigned int length, in_addr& 
 		return 0;
 
 	sockaddr_in addr;
-#if defined(__WINDOWS__)
-	int size = sizeof(sockaddr_in);
-#else
 	socklen_t size = sizeof(sockaddr_in);
-#endif
 
-	ssize_t len = ::recvfrom(m_fd, (char*)buffer, length, 0, (sockaddr *)&addr, &size);
-	if (len <= 0) {
-#if defined(__WINDOWS__)
-		wxLogError(wxT("Error returned from recvfrom (port: %u), err: %lu"), m_port, ::GetLastError());
+#if defined(_WIN32)
+	int len = ::recvfrom(m_fd, (char*)buffer, length, 0, (sockaddr *)&addr, &size);
 #else
-		wxLogError(wxT("Error returned from recvfrom (port: %u), err: %d"), m_port, errno);
+	ssize_t len = ::recvfrom(m_fd, (char*)buffer, length, 0, (sockaddr *)&addr, &size);
+#endif
+	if (len <= 0) {
+#if defined(_WIN32)
+		::fprintf(stderr, "Error returned from recvfrom (port: %u), err: %d\n", m_port, WSAGetLastError());
+#else
+		::fprintf(stderr, "Error returned from recvfrom (port: %u), err: %d\n", m_port, errno);
 #endif
 		return -1;
 	}
@@ -199,17 +187,25 @@ bool CUDPReaderWriter::write(const unsigned char* buffer, unsigned int length, c
 	addr.sin_addr   = address;
 	addr.sin_port   = htons(port);
 
-	ssize_t ret = ::sendto(m_fd, (char *)buffer, length, 0, (sockaddr *)&addr, sizeof(sockaddr_in));
-	if (ret < 0) {
-#if defined(__WINDOWS__)
-		wxLogError(wxT("Error returned from sendto (port: %u), err: %lu"), m_port, ::GetLastError());
+#if defined(_WIN32)
+	int ret = ::sendto(m_fd, (char *)buffer, length, 0, (sockaddr *)&addr, sizeof(sockaddr_in));
 #else
-		wxLogError(wxT("Error returned from sendto (port: %u), err: %d"), m_port, errno);
+	ssize_t ret = ::sendto(m_fd, (char *)buffer, length, 0, (sockaddr *)&addr, sizeof(sockaddr_in));
+#endif
+	if (ret < 0) {
+#if defined(_WIN32)
+		::fprintf(stderr, "Error returned from sendto (port: %u), err: %d\n", m_port, WSAGetLastError());
+#else
+		::fprintf(stderr, "Error returned from sendto (port: %u), err: %d\n", m_port, errno);
 #endif
 		return false;
 	}
 
+#if defined(_WIN32)
+	if (ret != int(length))
+#else
 	if (ret != ssize_t(length))
+#endif
 		return false;
 
 	return true;
@@ -217,7 +213,7 @@ bool CUDPReaderWriter::write(const unsigned char* buffer, unsigned int length, c
 
 void CUDPReaderWriter::close()
 {
-#if defined(__WINDOWS__)
+#if defined(_WIN32)
 	::closesocket(m_fd);
 #else
 	::close(m_fd);

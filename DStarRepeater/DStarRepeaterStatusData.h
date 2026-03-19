@@ -22,31 +22,40 @@
 #include "DStarRepeaterDefs.h"
 #include "DStarDefines.h"
 
-#include <wx/wx.h>
+#include "StdCompat.h"
 
-#if defined(MQTT)
-#include <string>
-#endif
-
+// CDStarRepeaterStatusData — an immutable snapshot of repeater state captured
+// at a single point in time.
+//
+// Created by each thread's getStatus() method and consumed by:
+//   - The GUI display panel (polling via a timer).
+//   - The MQTT publisher (toJSON(), published every 1 s to {name}/status).
+//
+// Contains the D-Star header fields of the current transmission, the TX flag,
+// both state-machine states, timer values for the timeout/beacon/announcement
+// countdown displays, the current BER or loss percentage, the gateway-supplied
+// ack text, and the five status strings.
+//
+// For DVAP modems, squelch and signal-strength fields are added via setDVAP().
 class CDStarRepeaterStatusData {
 public:
-	CDStarRepeaterStatusData(const wxString& myCall1, const wxString& myCall2, const wxString& yourCall,
-							  const wxString& rptCall1, const wxString& rptCall2, unsigned char flag1,
+	CDStarRepeaterStatusData(const std::string& myCall1, const std::string& myCall2, const std::string& yourCall,
+							  const std::string& rptCall1, const std::string& rptCall2, unsigned char flag1,
 							  unsigned char flag2, unsigned char flag3, bool tx, DSTAR_RX_STATE rxState,
 							  DSTAR_RPT_STATE rptState, unsigned int timeoutTimer, unsigned int timeoutExpiry,
 							  unsigned int beaconTimer, unsigned int beaconExpiry, unsigned int announceTimer,
-							  unsigned int announceExpiry, float percent, const wxString& text,
-							  const wxString& status1, const wxString& status2, const wxString& status3,
-							  const wxString& status4, const wxString& status5);
+							  unsigned int announceExpiry, float percent, const std::string& text,
+							  const std::string& status1, const std::string& status2, const std::string& status3,
+							  const std::string& status4, const std::string& status5);
 	~CDStarRepeaterStatusData();
 
 	void setDVAP(bool squelch, int signal);
 
-	wxString      getMyCall1() const;
-	wxString      getMyCall2() const;
-	wxString      getYourCall() const;
-	wxString      getRptCall1() const;
-	wxString      getRptCall2() const;
+	std::string   getMyCall1() const;
+	std::string   getMyCall2() const;
+	std::string   getYourCall() const;
+	std::string   getRptCall1() const;
+	std::string   getRptCall2() const;
 	unsigned char getFlag1() const;
 	unsigned char getFlag2() const;
 	unsigned char getFlag3() const;
@@ -69,23 +78,23 @@ public:
 
 	float         getPercent() const;
 
-	wxString      getText() const;
-	wxString      getStatus1() const;
-	wxString      getStatus2() const;
-	wxString      getStatus3() const;
-	wxString      getStatus4() const;
-	wxString      getStatus5() const;
+	std::string   getText() const;
+	std::string   getStatus1() const;
+	std::string   getStatus2() const;
+	std::string   getStatus3() const;
+	std::string   getStatus4() const;
+	std::string   getStatus5() const;
 
 #if defined(MQTT)
 	std::string   toJSON() const;
 #endif
 
 private:
-	wxString        m_myCall1;
-	wxString        m_myCall2;
-	wxString        m_yourCall;
-	wxString        m_rptCall1;
-	wxString        m_rptCall2;
+	std::string     m_myCall1;
+	std::string     m_myCall2;
+	std::string     m_yourCall;
+	std::string     m_rptCall1;
+	std::string     m_rptCall2;
 	unsigned char   m_flag1;
 	unsigned char   m_flag2;
 	unsigned char   m_flag3;
@@ -99,12 +108,12 @@ private:
 	unsigned int    m_announceTimer;
 	unsigned int    m_announceExpiry;
 	float           m_percent;
-	wxString        m_text;
-	wxString        m_status1;
-	wxString        m_status2;
-	wxString        m_status3;
-	wxString        m_status4;
-	wxString        m_status5;
+	std::string     m_text;
+	std::string     m_status1;
+	std::string     m_status2;
+	std::string     m_status3;
+	std::string     m_status4;
+	std::string     m_status5;
 
 	// DVAP
 	bool            m_squelch;

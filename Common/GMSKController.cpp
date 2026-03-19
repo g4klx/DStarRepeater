@@ -17,11 +17,13 @@
  */
 
 #include "GMSKController.h"
-#if defined(__WINDOWS__)
-#include "GMSKModemWinUSB.h"
-#endif
 #include "GMSKModemLibUsb.h"
 #include "Timer.h"
+#include "Logger.h"
+
+#include <cassert>
+#include <chrono>
+#include <thread>
 
 const unsigned char DVRPTR_HEADER_LENGTH = 5U;
 
@@ -31,30 +33,16 @@ const unsigned int CYCLE_TIME = 15U;
 
 CGMSKController::CGMSKController(USB_INTERFACE iface, unsigned int address, bool duplex) :
 CModem(),
-m_modem(NULL),
+m_modem(nullptr),
 m_duplex(duplex),
-m_buffer(NULL),
+m_buffer(nullptr),
 m_txData(1000U)
 {
-	wxASSERT(address > 0U);
+	assert(address > 0U);
 
 	m_buffer = new unsigned char[BUFFER_LENGTH];
 
-#if defined(__WINDOWS__)
-	switch (iface) {
-		case UI_LIBUSB:
-			m_modem = new CGMSKModemLibUsb(address);
-			break;
-		case UI_WINUSB:
-			m_modem = new CGMSKModemWinUSB(address);
-			break;
-		default:
-			wxLogError(wxT("Unknown GMSM modem driver type - %d"), int(iface));
-			break;
-	}
-#else
 	m_modem = new CGMSKModemLibUsb(address);
-#endif
 }
 
 CGMSKController::~CGMSKController()
@@ -64,7 +52,7 @@ CGMSKController::~CGMSKController()
 
 bool CGMSKController::start()
 {
-	if (m_modem == NULL)
+	if (m_modem == nullptr)
 		return false;
 
 	bool ret = m_modem->open();
@@ -73,16 +61,14 @@ bool CGMSKController::start()
 		return false;
 	}
 
-	Create();
-	SetPriority(100U);
-	Run();
+	m_thread = std::thread(&CGMSKController::entry, this);
 
 	return true;
 }
 
-void* CGMSKController::Entry()
+void CGMSKController::entry()
 {
-	wxLogMessage(wxT("Starting GMSK Modem Controller thread"));
+	wxLogMessage("Starting GMSK Modem Controller thread");
 
 	CTimer hdrTimer(1000U, 0U, 100U);
 	hdrTimer.start();
@@ -98,10 +84,8 @@ void* CGMSKController::Entry()
 	unsigned char  readLength = 0U;
 	unsigned char* readBuffer = new unsigned char[DV_FRAME_LENGTH_BYTES];
 
-	wxStopWatch stopWatch;
-
 	while (!m_stopped) {
-		stopWatch.Start();
+		auto loopStart = std::chrono::steady_clock::now();
 
 		// Only receive when not transmitting or when in duplex mode
 		if (!m_tx || m_duplex) {
@@ -110,10 +94,10 @@ void* CGMSKController::Entry()
 				bool end;
 				int ret = m_modem->readData(buffer, GMSK_MODEM_DATA_LENGTH, end);
 				if (ret >= 0) {
-					// CUtils::dump(wxT("Read Data"), buffer, ret);
+					// CUtils::dump("Read Data", buffer, ret);
 
 					if (end) {
-						wxMutexLocker locker(m_mutex);
+						std::lock_guard<std::mutex> lock(m_mutex);
 
 						unsigned char data[2U];
 						data[0U] = DSMTT_EOT;
@@ -129,7 +113,7 @@ void* CGMSKController::Entry()
 
 							readLength++;
 							if (readLength >= DV_FRAME_LENGTH_BYTES) {
-								wxMutexLocker locker(m_mutex);
+								std::lock_guard<std::mutex> lock(m_mutex);
 
 								unsigned char data[2U];
 								data[0U] = DSMTT_DATA;
@@ -152,9 +136,9 @@ void* CGMSKController::Entry()
 					unsigned char buffer[90U];
 					bool ret = m_modem->readHeader(buffer, 90U);
 					if (ret) {
-						// CUtils::dump(wxT("Read Header"), buffer, RADIO_HEADER_LENGTH_BYTES);
+						// CUtils::dump("Read Header", buffer, RADIO_HEADER_LENGTH_BYTES);
 
-						wxMutexLocker locker(m_mutex);
+						std::lock_guard<std::mutex> lock(m_mutex);
 
 						unsigned char data[2U];
 						data[0U] = DSMTT_HEADER;
@@ -176,7 +160,7 @@ void* CGMSKController::Entry()
 		// Only transmit when not receiving or when in duplex mode
 		if (!rx || m_duplex) {
 			if (writeLength == 0U && m_txData.hasData()) {
-				wxMutexLocker locker(m_mutex);
+				std::lock_guard<std::mutex> lock(m_mutex);
 
 				unsigned char type = DSMTT_NONE;
 				m_txData.getData(&type, 1U);
@@ -192,7 +176,7 @@ void* CGMSKController::Entry()
 
 					// Check that the modem isn't still transmitting before sending the new header
 					if (tx == STATE_FALSE) {
-						// CUtils::dump(wxT("Write Header"), writeBuffer, writeLength);
+						// CUtils::dump("Write Header", writeBuffer, writeLength);
 						m_modem->writeHeader(writeBuffer, writeLength);
 						m_modem->setPTT(true);
 						dataTimer.start();
@@ -212,7 +196,7 @@ void* CGMSKController::Entry()
 
 						// Check that there is space in the modem buffer
 						if (ret == STATE_TRUE) {
-							// CUtils::dump(wxT("Write Data"), writeBuffer, writeLength);
+							// CUtils::dump("Write Data", writeBuffer, writeLength);
 							int ret = m_modem->writeData(writeBuffer, writeLength);
 							if (ret > 0) {
 								writeLength -= ret;
@@ -236,14 +220,16 @@ void* CGMSKController::Entry()
 			}
 		}
 
-		unsigned long ms = stopWatch.Time();
+		auto loopEnd = std::chrono::steady_clock::now();
+		unsigned long ms = std::chrono::duration_cast<std::chrono::milliseconds>(loopEnd - loopStart).count();
 
 		// Don't sleep when reading from the modem
 		if (!rx) {
 			if (ms < CYCLE_TIME)
-				Sleep(CYCLE_TIME - ms);
+				std::this_thread::sleep_for(std::chrono::milliseconds(CYCLE_TIME - ms));
 
-			ms = stopWatch.Time();
+			loopEnd = std::chrono::steady_clock::now();
+			ms = std::chrono::duration_cast<std::chrono::milliseconds>(loopEnd - loopStart).count();
 		}
 
 		// Catch up with the clock
@@ -251,24 +237,22 @@ void* CGMSKController::Entry()
 		hdrTimer.clock(ms);
 	}
 
-	wxLogMessage(wxT("Stopping GMSK Modem Controller thread"));
+	wxLogMessage("Stopping GMSK Modem Controller thread");
 
-	if (m_modem != NULL) {
+	if (m_modem != nullptr) {
 		m_modem->close();
 		delete m_modem;
 	}
 
 	delete[] writeBuffer;
 	delete[] readBuffer;
-
-	return NULL;
 }
 
 bool CGMSKController::writeHeader(const CHeaderData& header)
 {
 	bool ret = m_txData.hasSpace(RADIO_HEADER_LENGTH_BYTES);
 	if (!ret) {
-		wxLogWarning(wxT("No space to write the header"));
+		wxLogWarning("No space to write the header");
 		return false;
 	}
 
@@ -280,27 +264,27 @@ bool CGMSKController::writeHeader(const CHeaderData& header)
 	buffer[1U] = header.getFlag2();
 	buffer[2U] = header.getFlag3();
 
-	wxString rpt2 = header.getRptCall2();
-	for (unsigned int i = 0U; i < rpt2.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 3U]  = rpt2.GetChar(i);
+	std::string rpt2 = header.getRptCall2();
+	for (unsigned int i = 0U; i < rpt2.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 3U]  = rpt2[i];
 
-	wxString rpt1 = header.getRptCall1();
-	for (unsigned int i = 0U; i < rpt1.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 11U] = rpt1.GetChar(i);
+	std::string rpt1 = header.getRptCall1();
+	for (unsigned int i = 0U; i < rpt1.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 11U] = rpt1[i];
 
-	wxString your = header.getYourCall();
-	for (unsigned int i = 0U; i < your.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 19U] = your.GetChar(i);
+	std::string your = header.getYourCall();
+	for (unsigned int i = 0U; i < your.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 19U] = your[i];
 
-	wxString my1 = header.getMyCall1();
-	for (unsigned int i = 0U; i < my1.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 27U] = my1.GetChar(i);
+	std::string my1 = header.getMyCall1();
+	for (unsigned int i = 0U; i < my1.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 27U] = my1[i];
 
-	wxString my2 = header.getMyCall2();
-	for (unsigned int i = 0U; i < my2.Len() && i < SHORT_CALLSIGN_LENGTH; i++)
-		buffer[i + 35U] = my2.GetChar(i);
+	std::string my2 = header.getMyCall2();
+	for (unsigned int i = 0U; i < my2.size() && i < SHORT_CALLSIGN_LENGTH; i++)
+		buffer[i + 35U] = my2[i];
 
-	wxMutexLocker locker(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 
 	unsigned char data[2U];
 	data[0U] = DSMTT_HEADER;
@@ -316,11 +300,11 @@ bool CGMSKController::writeData(const unsigned char* data, unsigned int, bool en
 {
 	bool ret = m_txData.hasSpace(DV_FRAME_LENGTH_BYTES + 2U);
 	if (!ret) {
-		wxLogWarning(wxT("No space to write data"));
+		wxLogWarning("No space to write data");
 		return false;
 	}
 
-	wxMutexLocker locker(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 
 	unsigned char buffer[2U];
 	buffer[0U] = end ? DSMTT_EOT : DSMTT_DATA;
@@ -347,7 +331,7 @@ bool CGMSKController::isTXReady()
 
 bool CGMSKController::reopenModem()
 {
-	wxLogMessage(wxT("Connection to the GMSK modem has been lost"));
+	wxLogMessage("Connection to the GMSK modem has been lost");
 
 	m_modem->close();
 
@@ -357,18 +341,18 @@ bool CGMSKController::reopenModem()
 			return true;
 
 		// Reset the drivers state
-		m_mutex.Lock();
-		m_txData.clear();
-		m_mutex.Unlock();
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			m_txData.clear();
+		}
 
 		m_tx = false;
 
-		Sleep(1000UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 	}
 
 	delete m_modem;
-	m_modem = NULL;
+	m_modem = nullptr;
 
 	return false;
-
 }

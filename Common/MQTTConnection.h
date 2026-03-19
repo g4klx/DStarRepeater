@@ -23,8 +23,26 @@
 
 #include <mosquitto.h>
 
+#include <atomic>
 #include <vector>
 #include <string>
+
+/*
+ * Thin wrapper around the libmosquitto client for publish-only MQTT telemetry.
+ *
+ * open() initialises the mosquitto client, registers callbacks, and starts the
+ * internal mosquitto network loop thread (mosquitto_loop_start).  After open()
+ * returns, publish() can be called from any thread; mosquitto handles its own
+ * thread safety internally.
+ *
+ * Topics without a '/' are automatically prefixed with the configured name
+ * (e.g. "log" becomes "MyRepeater/log").  Topics containing '/' are used as-is.
+ *
+ * Optional subscriptions can be provided via the subs vector; each entry pairs
+ * a topic string with a callback function invoked on incoming messages.
+ *
+ * This class is compiled only when MQTT=1 is passed to make.
+ */
 
 enum class MQTT_QOS : int {
 	AT_MODE_ONCE  = 0,
@@ -48,7 +66,7 @@ public:
 private:
 	std::string    m_host;
 	unsigned short m_port;
-	std::string    m_name;
+	std::string    m_name;        // Prefix prepended to bare topic strings.
 	bool           m_authEnabled;
 	std::string    m_username;
 	std::string    m_password;
@@ -56,8 +74,9 @@ private:
 	unsigned int   m_keepalive;
 	MQTT_QOS       m_qos;
 	mosquitto*     m_mosq;
-	bool           m_connected;
+	std::atomic<bool> m_connected;   // Set true in onConnect, false in onDisconnect.
 
+	// Mosquitto event callbacks (called on the internal mosquitto thread).
 	static void onConnect(mosquitto* mosq, void* obj, int rc);
 	static void onSubscribe(mosquitto* mosq, void* obj, int mid, int qosCount, const int* grantedQOS);
 	static void onMessage(mosquitto* mosq, void* obj, const mosquitto_message* message);

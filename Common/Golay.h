@@ -19,6 +19,16 @@
 #ifndef Golay_H
 #define Golay_H
 
+/*
+ * Golay error-correcting code used by the AMBE FEC layer.
+ *
+ * Provides two variants:
+ *   Golay(23,12) — encodes 12 data bits into 23 bits; corrects up to 3 errors.
+ *   Golay(24,12) — adds a parity bit to the above for even-parity detection.
+ *
+ * encode*() returns the full codeword (data + parity bits).
+ * decode*() returns the corrected 12-bit data word, or ~0U on uncorrectable error.
+ */
 class CGolay {
 public:
 	static unsigned int encode23127(unsigned int data);

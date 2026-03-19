@@ -23,8 +23,9 @@
 #include "RingBuffer.h"
 #include "Modem.h"
 #include "Utils.h"
+#include "StdCompat.h"
 
-#include <wx/wx.h>
+#include <string>
 
 enum RESP_TYPE_MEGA {
 	RTM_TIMEOUT,
@@ -45,13 +46,46 @@ enum RESP_TYPE_MEGA {
 	RTM_SET_TESTMDE
 };
 
+/*
+ * CDVMegaController - Driver for DV-Mega boards (modem and radio variants).
+ *
+ * Hardware interface: USB CDC-ACM serial at 115200 baud.
+ *
+ * Two hardware variants, selected by constructor:
+ *   1. Modem variant  (port, path, rxInvert, txInvert, txDelay)
+ *      The board is a bare GMSK modem; the host radio provides the RF.
+ *      rxInvert/txInvert flip the baseband polarity to match the radio's
+ *      discriminator/modulator wiring.
+ *   2. Radio variant  (port, path, txDelay, rxFrequency, txFrequency, power)
+ *      The board includes a UHF/VHF transceiver.  Frequency and power are
+ *      programmed at startup via a second SET_CONFIG (RF layer) command.
+ *      rxFrequency != 0 is the distinguishing condition checked in openModem().
+ *
+ * Protocol: DVRPTR binary framing (shared with DV-RPTR V1).
+ *   Frame structure:  [0xD0] [len_lo] [len_hi] [type] [txCount] [pktCount]
+ *                     [payload...] [checksum_lo] [checksum_hi]
+ *   The type byte has bit 7 set in responses from the board (stripped with & 0x7F).
+ *   Checksum is either CCITT-16 (when m_checksum is true, reported in GET_STATUS)
+ *   or a fixed sentinel 0x000B when the firmware does not support checksums.
+ *
+ * Reconnection (findModem()):
+ *   On any serial error the port is closed.  An in-progress RX stream is
+ *   terminated with a synthetic DSMTT_EOT.  The driver then polls every 2s
+ *   (4 x 500ms sleep) searching for the device by USB sysfs path before
+ *   reopening and re-initialising.
+ *
+ * Sysfs path tracking (findPort / findPath):
+ *   m_path is the stable USB device path (e.g. /sys/devices/platform/.../1-1.2).
+ *   This survives port renumbering across reconnects.  findPort() walks
+ *   /sys/class/tty/ttyACM* to find which /dev node currently maps to that path.
+ */
 class CDVMegaController : public CModem {
 public:
-	CDVMegaController(const wxString& port, const wxString& path, bool rxInvert, bool txInvert, unsigned int txDelay);
-	CDVMegaController(const wxString& port, const wxString& path, unsigned int txDelay, unsigned int rxFrequency, unsigned int txFrequency, unsigned int power);
+	// Modem-only variant: no integrated RF, host radio provides the signal.
+	CDVMegaController(const std::string& port, const std::string& path, bool rxInvert, bool txInvert, unsigned int txDelay);
+	// Radio variant: integrated transceiver; frequency in Hz, power in percent.
+	CDVMegaController(const std::string& port, const std::string& path, unsigned int txDelay, unsigned int rxFrequency, unsigned int txFrequency, unsigned int power);
 	virtual ~CDVMegaController();
-
-	virtual void* Entry();
 
 	virtual bool start();
 
@@ -61,11 +95,13 @@ public:
 	virtual bool writeHeader(const CHeaderData& header);
 	virtual bool writeData(const unsigned char* data, unsigned int length, bool end);
 
-	virtual wxString getPath() const;
+	virtual std::string getPath() const;
 
 private:
-	wxString                   m_port;
-	wxString                   m_path;
+	void entry();
+
+	std::string                m_port;
+	std::string                m_path;
 	bool                       m_rxInvert;
 	bool                       m_txInvert;
 	unsigned int               m_txDelay;
@@ -93,9 +129,12 @@ private:
 	bool findPort();
 	bool findPath();
 
+	// Closes the port, signals EOT if mid-stream, then polls every 2s until
+	// findPort() + openModem() succeed or m_stopped is set.
 	bool findModem();
+	// Opens the serial port, sends GET_VERSION, SET_CONFIG (physical layer),
+	// optionally SET_CONFIG (RF layer for radio variant), then setEnabled(true).
 	bool openModem();
 };
 
 #endif
-

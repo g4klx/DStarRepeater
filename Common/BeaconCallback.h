@@ -14,6 +14,8 @@
 #ifndef	BeaconCallback_H
 #define	BeaconCallback_H
 
+// Callback interface implemented by the repeater thread.
+// CBeaconUnit calls these to key up the transmitter and push beacon DV frames.
 class IBeaconCallback {
 public:
 	virtual void transmitBeaconHeader() = 0;

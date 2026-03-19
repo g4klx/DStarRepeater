@@ -19,12 +19,16 @@
 #include "CCITTChecksumReverse.h"
 #include "MMDVMController.h"
 #include "DStarDefines.h"
+#include "Logger.h"
 #include "Timer.h"
 
-#if defined(__WINDOWS__)
-#include <setupapi.h>
-#else
-#include <wx/dir.h>
+#include <chrono>
+#include <thread>
+#include <cassert>
+#include <cstring>
+#if !defined(_WIN32)
+#include <dirent.h>
+#include <unistd.h>
 #endif
 
 const unsigned char MMDVM_FRAME_START  = 0xE0U;
@@ -52,7 +56,7 @@ const unsigned int MAX_RESPONSES = 30U;
 
 const unsigned int BUFFER_LENGTH = 200U;
 
-CMMDVMController::CMMDVMController(const wxString& port, const wxString& path, bool rxInvert, bool txInvert, bool pttInvert, unsigned int txDelay, unsigned int rxLevel, unsigned int txLevel) :
+CMMDVMController::CMMDVMController(const std::string& port, const std::string& path, bool rxInvert, bool txInvert, bool pttInvert, unsigned int txDelay, unsigned int rxLevel, unsigned int txLevel) :
 CModem(),
 m_port(port),
 m_path(path),
@@ -63,11 +67,11 @@ m_txDelay(txDelay),
 m_rxLevel(rxLevel),
 m_txLevel(txLevel),
 m_serial(port, SERIAL_115200, true),
-m_buffer(NULL),
+m_buffer(nullptr),
 m_txData(1000U),
 m_rx(false)
 {
-	wxASSERT(!port.IsEmpty());
+	assert(!port.empty());
 
 	m_buffer = new unsigned char[BUFFER_LENGTH];
 }
@@ -87,16 +91,14 @@ bool CMMDVMController::start()
 
 	findPath();
 
-	Create();
-	SetPriority(100U);
-	Run();
+	m_thread = std::thread(&CMMDVMController::entry, this);
 
 	return true;
 }
 
-void* CMMDVMController::Entry()
+void CMMDVMController::entry()
 {
-	wxLogMessage(wxT("Starting MMDVM Controller thread"));
+	wxLogMessage("Starting MMDVM Controller thread");
 
 	// Clock every 5ms-ish
 	CTimer pollTimer(200U, 0U, 100U);
@@ -115,8 +117,9 @@ void* CMMDVMController::Entry()
 			if (!ret) {
 				ret = findModem();
 				if (!ret) {
-					wxLogError(wxT("Stopping MMDVM Controller thread"));
-					return NULL;
+					wxLogError("Stopping MMDVM Controller thread");
+					delete[] writeBuffer;
+					return;
 				}
 			}
 
@@ -133,15 +136,16 @@ void* CMMDVMController::Entry()
 			case RTDVM_ERROR: {
 					bool ret = findModem();
 					if (!ret) {
-						wxLogError(wxT("Stopping MMDVM Controller thread"));
-						return NULL;
+						wxLogError("Stopping MMDVM Controller thread");
+						delete[] writeBuffer;
+						return;
 					}
 				}
 				break;
 
 			case RTDVM_DSTAR_HEADER: {
-					// CUtils::dump(wxT("RT_DSTAR_HEADER"), m_buffer, length);
-					wxMutexLocker locker(m_mutex);
+					// CUtils::dump("RT_DSTAR_HEADER", m_buffer, length);
+					std::lock_guard<std::mutex> lock(m_mutex);
 
 					unsigned char data[2U];
 					data[0U] = DSMTT_HEADER;
@@ -155,8 +159,8 @@ void* CMMDVMController::Entry()
 				break;
 
 			case RTDVM_DSTAR_DATA: {
-					// CUtils::dump(wxT("RT_DSTAR_DATA"), m_buffer, length);
-					wxMutexLocker locker(m_mutex);
+					// CUtils::dump("RT_DSTAR_DATA", m_buffer, length);
+					std::lock_guard<std::mutex> lock(m_mutex);
 
 					unsigned char data[2U];
 					data[0U] = DSMTT_DATA;
@@ -170,8 +174,8 @@ void* CMMDVMController::Entry()
 				break;
 
 			case RTDVM_DSTAR_EOT: {
-					// wxLogMessage(wxT("RT_DSTAR_EOT"));
-					wxMutexLocker locker(m_mutex);
+					// wxLogMessage("RT_DSTAR_EOT");
+					std::lock_guard<std::mutex> lock(m_mutex);
 
 					unsigned char data[2U];
 					data[0U] = DSMTT_EOT;
@@ -183,8 +187,8 @@ void* CMMDVMController::Entry()
 				break;
 
 			case RTDVM_DSTAR_LOST: {
-					// wxLogMessage(wxT("RT_DSTAR_LOST"));
-					wxMutexLocker locker(m_mutex);
+					// wxLogMessage("RT_DSTAR_LOST");
+					std::lock_guard<std::mutex> lock(m_mutex);
 
 					unsigned char data[2U];
 					data[0U] = DSMTT_LOST;
@@ -198,20 +202,21 @@ void* CMMDVMController::Entry()
 			case RTDVM_GET_STATUS: {
 					bool dstar = (m_buffer[3U] & 0x01U) == 0x01U;
 					if (!dstar) {
-						wxLogError(wxT("D-Star not enabled in the MMDVM!!!"));
-						wxLogError(wxT("Stopping MMDVM Controller thread"));
-						return NULL;
+						wxLogError("D-Star not enabled in the MMDVM!!!");
+						wxLogError("Stopping MMDVM Controller thread");
+						delete[] writeBuffer;
+						return;
 					}
 
 					m_tx  = (m_buffer[5U] & 0x01U) == 0x01U;
 
 					bool adcOverflow = (m_buffer[5U] & 0x02U) == 0x02U;
 					if (adcOverflow)
-						wxLogWarning(wxT("MMDVM ADC levels have overflowed"));
+						wxLogWarning("MMDVM ADC levels have overflowed");
 
 					space = m_buffer[6U];
-					// CUtils::dump(wxT("GET_STATUS"), m_buffer, length);
-					// wxLogMessage(wxT("PTT=%d space=%u"), int(m_tx), space);
+					// CUtils::dump("GET_STATUS", m_buffer, length);
+					// wxLogMessage("PTT=%d space=%u", int(m_tx), space);
 				}
 				break;
 
@@ -223,23 +228,23 @@ void* CMMDVMController::Entry()
 			case RTDVM_NAK: {
 					switch (m_buffer[3U]) {
 						case MMDVM_DSTAR_HEADER:
-							wxLogWarning(wxT("Received a header NAK from the MMDVM, reason = %u"), m_buffer[4U]);
+							wxLogWarning("Received a header NAK from the MMDVM, reason = %u", m_buffer[4U]);
 							break;
 						case MMDVM_DSTAR_DATA:
-							wxLogWarning(wxT("Received a data NAK from the MMDVM, reason = %u"), m_buffer[4U]);
+							wxLogWarning("Received a data NAK from the MMDVM, reason = %u", m_buffer[4U]);
 							break;
 						case MMDVM_DSTAR_EOT:
-							wxLogWarning(wxT("Received an EOT NAK from the MMDVM, reason = %u"), m_buffer[4U]);
+							wxLogWarning("Received an EOT NAK from the MMDVM, reason = %u", m_buffer[4U]);
 							break;
 						default:
-							wxLogWarning(wxT("Received a NAK from the MMDVM, command = 0x%02X, reason = %u"), m_buffer[3U], m_buffer[4U]);
+							wxLogWarning("Received a NAK from the MMDVM, command = 0x%02X, reason = %u", m_buffer[3U], m_buffer[4U]);
 							break;
 					}
 				}
 				break;
 
 			case RTDVM_DUMP:
-				CUtils::dump(wxT("Modem dump"), m_buffer + 3U, length - 3U);
+				CUtils::dump("Modem dump", m_buffer + 3U, length - 3U);
 				break;
 
 			case RTDVM_DEBUG1:
@@ -251,13 +256,13 @@ void* CMMDVMController::Entry()
 				break;
 
 			default:
-				wxLogMessage(wxT("Unknown message, type: %02X"), m_buffer[2U]);
-				CUtils::dump(wxT("Buffer dump"), m_buffer, length);
+				wxLogMessage("Unknown message, type: %02X", m_buffer[2U]);
+				CUtils::dump("Buffer dump", m_buffer, length);
 				break;
 		}
 
 		if (writeType == DSMTT_NONE && m_txData.hasData()) {
-			wxMutexLocker locker(m_mutex);
+			std::lock_guard<std::mutex> lock(m_mutex);
 
 			m_txData.getData(&writeType, 1U);
 			m_txData.getData(&writeLength, 1U);
@@ -265,46 +270,44 @@ void* CMMDVMController::Entry()
 		}
 
 		if (space > 4U && writeType == DSMTT_HEADER) {
-			// CUtils::dump(wxT("Write Header"), writeBuffer, writeLength);
+			// CUtils::dump("Write Header", writeBuffer, writeLength);
 
 			int ret = m_serial.write(writeBuffer, writeLength);
 			if (ret != int(writeLength))
-				wxLogWarning(wxT("Error when writing the header to the MMDVM"));
+				wxLogWarning("Error when writing the header to the MMDVM");
 
 			writeType = DSMTT_NONE;
 			space -= 4U;
 		}
 
 		if (space > 1U && (writeType == DSMTT_DATA || writeType == DSMTT_EOT)) {
-			// CUtils::dump(wxT("Write Data"), writeBuffer, writeLength);
+			// CUtils::dump("Write Data", writeBuffer, writeLength);
 
 			int ret = m_serial.write(writeBuffer, writeLength);
 			if (ret != int(writeLength))
-				wxLogWarning(wxT("Error when writing data to the MMDVM"));
+				wxLogWarning("Error when writing data to the MMDVM");
 
 			writeType = DSMTT_NONE;
 			space--;
 		}
 
-		Sleep(5UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
 		pollTimer.clock();
 	}
 
-	wxLogMessage(wxT("Stopping MMDVM Controller thread"));
+	wxLogMessage("Stopping MMDVM Controller thread");
 
 	delete[] writeBuffer;
 
 	m_serial.close();
-
-	return NULL;
 }
 
 bool CMMDVMController::writeHeader(const CHeaderData& header)
 {
 	bool ret = m_txData.hasSpace(46U);
 	if (!ret) {
-		wxLogWarning(wxT("No space to write the header"));
+		wxLogWarning("No space to write the header");
 		return false;
 	}
 
@@ -320,31 +323,31 @@ bool CMMDVMController::writeHeader(const CHeaderData& header)
 	buffer[4U] = header.getFlag2();
 	buffer[5U] = header.getFlag3();
 
-	wxString rpt2 = header.getRptCall2();
-	for (unsigned int i = 0U; i < rpt2.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 6U]  = rpt2.GetChar(i);
+	std::string rpt2 = header.getRptCall2();
+	for (unsigned int i = 0U; i < rpt2.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 6U]  = rpt2[i];
 
-	wxString rpt1 = header.getRptCall1();
-	for (unsigned int i = 0U; i < rpt1.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 14U] = rpt1.GetChar(i);
+	std::string rpt1 = header.getRptCall1();
+	for (unsigned int i = 0U; i < rpt1.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 14U] = rpt1[i];
 
-	wxString your = header.getYourCall();
-	for (unsigned int i = 0U; i < your.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 22U] = your.GetChar(i);
+	std::string your = header.getYourCall();
+	for (unsigned int i = 0U; i < your.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 22U] = your[i];
 
-	wxString my1 = header.getMyCall1();
-	for (unsigned int i = 0U; i < my1.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 30U] = my1.GetChar(i);
+	std::string my1 = header.getMyCall1();
+	for (unsigned int i = 0U; i < my1.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 30U] = my1[i];
 
-	wxString my2 = header.getMyCall2();
-	for (unsigned int i = 0U; i < my2.Len() && i < SHORT_CALLSIGN_LENGTH; i++)
-		buffer[i + 38U] = my2.GetChar(i);
+	std::string my2 = header.getMyCall2();
+	for (unsigned int i = 0U; i < my2.size() && i < SHORT_CALLSIGN_LENGTH; i++)
+		buffer[i + 38U] = my2[i];
 
 	CCCITTChecksumReverse cksum1;
 	cksum1.update(buffer + 3U, RADIO_HEADER_LENGTH_BYTES - 2U);
 	cksum1.result(buffer + 42U);
 
-	wxMutexLocker locker(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 
 	unsigned char type = DSMTT_HEADER;
 	m_txData.addData(&type, 1U);
@@ -361,7 +364,7 @@ bool CMMDVMController::writeData(const unsigned char* data, unsigned int length,
 {
 	bool ret = m_txData.hasSpace(17U);
 	if (!ret) {
-		wxLogWarning(wxT("No space to write data"));
+		wxLogWarning("No space to write data");
 		return false;
 	}
 
@@ -372,7 +375,7 @@ bool CMMDVMController::writeData(const unsigned char* data, unsigned int length,
 		buffer[1U] = 3U;
 		buffer[2U] = MMDVM_DSTAR_EOT;
 
-		wxMutexLocker locker(m_mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);
 
 		unsigned char type = DSMTT_EOT;
 		m_txData.addData(&type, 1U);
@@ -390,7 +393,7 @@ bool CMMDVMController::writeData(const unsigned char* data, unsigned int length,
 	buffer[2U] = MMDVM_DSTAR_DATA;
 	::memcpy(buffer + 3U, data, DV_FRAME_LENGTH_BYTES);
 
-	wxMutexLocker locker(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 
 	unsigned char type = DSMTT_DATA;
 	m_txData.addData(&type, 1U);
@@ -416,9 +419,13 @@ bool CMMDVMController::isTXReady()
 	return m_txData.isEmpty();
 }
 
+// Waits 2s for the MMDVM firmware to finish booting, then retries GET_VERSION
+// up to 6 times (with 1s between attempts) before giving up.  The 2s initial
+// wait is required because the Arduino bootloader holds the serial port for
+// approximately that period after a USB connection is established.
 bool CMMDVMController::readVersion()
 {
-	::wxSleep(2);
+	std::this_thread::sleep_for(std::chrono::seconds(2));
 
 	for (unsigned int i = 0U; i < 6U; i++) {
 		unsigned char buffer[3U];
@@ -427,30 +434,30 @@ bool CMMDVMController::readVersion()
 		buffer[1U] = 3U;
 		buffer[2U] = MMDVM_GET_VERSION;
 
-		// CUtils::dump(wxT("Written"), buffer, 3U);
+		// CUtils::dump("Written", buffer, 3U);
 
 		int ret = m_serial.write(buffer, 3U);
 		if (ret != 3)
 			return false;
 
 		for (unsigned int count = 0U; count < MAX_RESPONSES; count++) {
-			::wxMilliSleep(10UL);
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 			unsigned int length;
 			RESP_TYPE_MMDVM resp = getResponse(m_buffer, length);
 			if (resp == RTDVM_GET_VERSION) {
-				wxString description((char*)(m_buffer + 4U), wxConvLocal, length - 4U);
+				std::string description((char*)(m_buffer + 4U), length - 4U);
 
-				wxLogInfo(wxT("MMDVM protocol version: %u, description: %s"), m_buffer[3U], description.c_str());
+				wxLogInfo("MMDVM protocol version: %u, description: %s", m_buffer[3U], description.c_str());
 
 				return true;
 			}
 		}
 
-		::wxSleep(1);
+		std::this_thread::sleep_for(std::chrono::seconds(1));
 	}
 
-	wxLogError(wxT("Unable to read the firmware version after six attempts"));
+	wxLogError("Unable to read the firmware version after six attempts");
 
 	return false;
 }
@@ -466,6 +473,14 @@ bool CMMDVMController::readStatus()
 	return m_serial.write(buffer, 3U) == 3;
 }
 
+// Sends SET_CONFIG (20-byte frame) to configure the MMDVM for D-Star only.
+// Key fields:
+//   byte[3] invert flags: bit0=rxInvert, bit1=txInvert, bit2=pttInvert
+//   byte[4] mode mask:    0x01 = D-Star enabled, all other modes off
+//   byte[5] txDelay:      value / 10ms units (e.g. txDelay=100 -> 10)
+//   byte[6] initial state: 1 = STATE_DSTAR
+//   byte[7] rxLevel, byte[8] txLevel: 0-100% scaled to 0-255
+//   bytes[12-15,18] txLevel repeated for DMR/YSF/P25/NXDN (unused but required)
 bool CMMDVMController::setConfig()
 {
 	unsigned char buffer[25U];
@@ -503,7 +518,7 @@ bool CMMDVMController::setConfig()
 	buffer[13U] = (m_txLevel * 255U) / 100U;
 	buffer[14U] = (m_txLevel * 255U) / 100U;
 	buffer[15U] = (m_txLevel * 255U) / 100U;
-	
+
 	buffer[16U] = 128U;
 	buffer[17U] = 128U;
 
@@ -511,7 +526,7 @@ bool CMMDVMController::setConfig()
 
 	buffer[19U] = 0U;
 
-	// CUtils::dump(wxT("Written"), buffer, 20U);
+	// CUtils::dump("Written", buffer, 20U);
 
 	int ret = m_serial.write(buffer, 20U);
 	if (ret != 20U)
@@ -521,23 +536,23 @@ bool CMMDVMController::setConfig()
 	unsigned int length;
 	RESP_TYPE_MMDVM resp;
 	do {
-		::wxMilliSleep(10UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RTDVM_ACK && resp != RTDVM_NAK) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The MMDVM is not responding to the SET_CONFIG command"));
+				wxLogError("The MMDVM is not responding to the SET_CONFIG command");
 				return false;
 			}
 		}
 	} while (resp != RTDVM_ACK && resp != RTDVM_NAK);
 
-	// CUtils::dump(wxT("Response"), m_buffer, length);
+	// CUtils::dump("Response", m_buffer, length);
 
 	if (resp == RTDVM_NAK) {
-		wxLogError(wxT("Received a NAK to the SET_CONFIG command from the modem"));
+		wxLogError("Received a NAK to the SET_CONFIG command from the modem");
 		return false;
 	}
 
@@ -549,7 +564,7 @@ RESP_TYPE_MMDVM CMMDVMController::getResponse(unsigned char *buffer, unsigned in
 	// Get the start of the frame or nothing at all
 	int ret = m_serial.read(buffer + 0U, 1U);
 	if (ret < 0) {
-		wxLogError(wxT("Error when reading from the MMDVM"));
+		wxLogError("Error when reading from the MMDVM");
 		return RTDVM_ERROR;
 	}
 
@@ -561,7 +576,7 @@ RESP_TYPE_MMDVM CMMDVMController::getResponse(unsigned char *buffer, unsigned in
 
 	ret = m_serial.read(buffer + 1U, 1U);
 	if (ret < 0) {
-		wxLogError(wxT("Error when reading from the MMDVM"));
+		wxLogError("Error when reading from the MMDVM");
 		return RTDVM_ERROR;
 	}
 
@@ -571,8 +586,8 @@ RESP_TYPE_MMDVM CMMDVMController::getResponse(unsigned char *buffer, unsigned in
 	length = buffer[1U];
 
 	if (length >= BUFFER_LENGTH) {
-		wxLogError(wxT("Invalid data received from the MMDVM"));
-		CUtils::dump(wxT("Data"), buffer, 2U);
+		wxLogError("Invalid data received from the MMDVM");
+		CUtils::dump("Data", buffer, 2U);
 		return RTDVM_TIMEOUT;
 	}
 
@@ -581,18 +596,21 @@ RESP_TYPE_MMDVM CMMDVMController::getResponse(unsigned char *buffer, unsigned in
 	while (offset < length) {
 		int ret = m_serial.read(buffer + offset, length - offset);
 		if (ret < 0) {
-			wxLogError(wxT("Error when reading from the MMDVM"));
+			wxLogError("Error when reading from the MMDVM");
 			return RTDVM_ERROR;
 		}
 
 		if (ret > 0)
 			offset += ret;
 
-		if (ret == 0)
-			Sleep(5UL);
+		if (ret == 0) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			if (m_stopped)
+				return RTDVM_TIMEOUT;
+		}
 	}
 
-	// CUtils::dump(wxT("Received"), buffer, length);
+	// CUtils::dump("Received", buffer, length);
 
 	switch (buffer[2U]) {
 		case MMDVM_GET_STATUS:
@@ -628,151 +646,109 @@ RESP_TYPE_MMDVM CMMDVMController::getResponse(unsigned char *buffer, unsigned in
 	}
 }
 
-wxString CMMDVMController::getPath() const
+std::string CMMDVMController::getPath() const
 {
 	return m_path;
 }
 
 bool CMMDVMController::findPort()
 {
-	if (m_path.IsEmpty())
+#if !defined(_WIN32)
+	if (m_path.empty())
 		return false;
 
-#if defined(__WINDOWS__)
-#else
-	wxDir dir;
-	bool ret1 = dir.Open(wxT("/sys/class/tty"));
-	if (!ret1) {
-		wxLogError(wxT("Cannot open directory /sys/class/tty"));
+	DIR* dir = ::opendir("/sys/class/tty");
+	if (dir == nullptr) {
+		wxLogError("Cannot open directory /sys/class/tty");
 		return false;
 	}
 
-	wxString fileName;
-	ret1 = dir.GetFirst(&fileName, wxT("ttyACM*"));
-	while (ret1) {
-		wxString path;
-		path.Printf(wxT("/sys/class/tty/%s"), fileName.c_str());
+	struct dirent* entry;
+	while ((entry = ::readdir(dir)) != nullptr) {
+		std::string fileName(entry->d_name);
+
+		// Match ttyACM* entries
+		if (fileName.substr(0, 6) != "ttyACM")
+			continue;
+
+		std::string path = "/sys/class/tty/" + fileName;
 
 		char cpath[255U];
-		::memset(cpath, 0x00U, 255U);
-
-		for (unsigned int i = 0U; i < path.Len(); i++)
-			cpath[i] = path.GetChar(i);
+		::strncpy(cpath, path.c_str(), sizeof(cpath) - 1);
+		cpath[sizeof(cpath) - 1] = '\0';
 
 		char symlink[255U];
-		int ret2 = ::readlink(cpath, symlink, 255U);
+		int ret2 = ::readlink(cpath, symlink, sizeof(symlink) - 1);
 		if (ret2 < 0) {
-			::strcat(cpath, "/device");
-			ret2 = ::readlink(cpath, symlink, 255U);
+			::strncat(cpath, "/device", sizeof(cpath) - ::strlen(cpath) - 1);
+			ret2 = ::readlink(cpath, symlink, sizeof(symlink) - 1);
 			if (ret2 < 0) {
-				wxLogError(wxT("Error from readlink()"));
+				wxLogError("Error from readlink()");
+				::closedir(dir);
 				return false;
 			}
-
-			path = wxString(symlink, wxConvLocal, ret2);
+			symlink[ret2] = '\0';
+			path = std::string(symlink, ret2);
 		} else {
-			// Get all but the last section
-			wxString fullPath = wxString(symlink, wxConvLocal, ret2);
-			path = fullPath.BeforeLast(wxT('/'));
+			symlink[ret2] = '\0';
+			std::string fullPath(symlink, ret2);
+			size_t pos = fullPath.rfind('/');
+			path = (pos != std::string::npos) ? fullPath.substr(0, pos) : fullPath;
 		}
 
-		if (path.IsSameAs(m_path)) {
-			m_port.Printf(wxT("/dev/%s"), fileName.c_str());
+		if (path == m_path) {
+			m_port = "/dev/" + fileName;
 
-			wxLogMessage(wxT("Found modem port of %s based on the path"), m_port.c_str());
+			wxLogMessage("Found modem port of %s based on the path", m_port.c_str());
 
+			::closedir(dir);
 			return true;
 		}
-
-		ret1 = dir.GetNext(&fileName);
 	}
-#endif
 
+	::closedir(dir);
 	return false;
+#else
+	return true;
+#endif
 }
 
 bool CMMDVMController::findPath()
 {
-#if defined(__WINDOWS__)
-#ifdef notdef
-	GUID guids[5U];
-
-	DWORD count;
-	BOOL res = ::SetupDiClassGuidsFromName(L"Multifunction", guids, 5U, &count);
-	if (!res) {
-		wxLogError(wxT("Error from SetupDiClassGuidsFromName: err=%u"), ::GetLastError());
-		return false;
-	}
-
-	for (DWORD i = 0U; i < count; i++) {
-		HDEVINFO devInfo = ::SetupDiGetClassDevs(&guids[i], NULL, NULL, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
-		if (devInfo == INVALID_HANDLE_VALUE) {
-			wxLogError(wxT("Error from SetupDiGetClassDevs: err=%u"), ::GetLastError());
-			return false;
-		}
-
-		SP_DEVICE_INTERFACE_DATA devInfoData;
-		devInfoData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
-
-		for (DWORD index = 0U; ::SetupDiEnumDeviceInterfaces(devInfo, NULL, &guids[i], index, &devInfoData); index++) {
-			// Find the required length of the device structure
-			DWORD length;
-			::SetupDiGetDeviceInterfaceDetail(devInfo, &devInfoData, NULL, 0U, &length, NULL);
-
-			PSP_DEVICE_INTERFACE_DETAIL_DATA detailData = PSP_DEVICE_INTERFACE_DETAIL_DATA(::malloc(length));
-			detailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
-
-			// Get the detailed data into the newly allocated device structure
-			DWORD required;
-			res = ::SetupDiGetDeviceInterfaceDetail(devInfo, &devInfoData, detailData, length, &required, NULL);
-			if (!res) {
-				wxLogError(wxT("Error from SetupDiGetDeviceInterfaceDetail: err=%u"), ::GetLastError());
-				::SetupDiDestroyDeviceInfoList(devInfo);
-				::free(detailData);
-				return false;
-			}
-
-			::free(detailData);
-		}
-
-		::SetupDiDestroyDeviceInfoList(devInfo);
-	}
-
-	return false;
-#endif
-#else
-	wxString path;
-	path.Printf(wxT("/sys/class/tty/%s"), m_port.Mid(5U).c_str());	
+#if !defined(_WIN32)
+	std::string path = "/sys/class/tty/" + m_port.substr(5U);
 
 	char cpath[255U];
-	::memset(cpath, 0x00U, 255U);
-
-	for (unsigned int i = 0U; i < path.Len(); i++)
-		cpath[i] = path.GetChar(i);
+	::strncpy(cpath, path.c_str(), sizeof(cpath) - 1);
+	cpath[sizeof(cpath) - 1] = '\0';
 
 	char symlink[255U];
-	int ret = ::readlink(cpath, symlink, 255U);
+	int ret = ::readlink(cpath, symlink, sizeof(symlink) - 1);
 	if (ret < 0) {
-		::strcat(cpath, "/device");
-		ret = ::readlink(cpath, symlink, 255U);
+		::strncat(cpath, "/device", sizeof(cpath) - ::strlen(cpath) - 1);
+		ret = ::readlink(cpath, symlink, sizeof(symlink) - 1);
 		if (ret < 0) {
-			wxLogError(wxT("Error from readlink()"));
+			wxLogError("Error from readlink()");
 			return false;
 		}
-
-		path = wxString(symlink, wxConvLocal, ret);
+		symlink[ret] = '\0';
+		path = std::string(symlink, ret);
 	} else {
-		wxString fullPath = wxString(symlink, wxConvLocal, ret);
-		path = fullPath.BeforeLast(wxT('/'));
+		symlink[ret] = '\0';
+		std::string fullPath(symlink, ret);
+		size_t pos = fullPath.rfind('/');
+		path = (pos != std::string::npos) ? fullPath.substr(0, pos) : fullPath;
 	}
 
-	if (m_path.IsEmpty())
-		wxLogMessage(wxT("Found modem path of %s"), path.c_str());
+	if (m_path.empty())
+		wxLogMessage("Found modem path of %s", path.c_str());
 
 	m_path = path;
-#endif
 
 	return true;
+#else
+	return true;
+#endif
 }
 
 bool CMMDVMController::findModem()
@@ -781,7 +757,7 @@ bool CMMDVMController::findModem()
 
 	// Tell the repeater that the signal has gone away
 	if (m_rx) {
-		wxMutexLocker locker(m_mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);
 
 		unsigned char data[2U];
 		data[0U] = DSMTT_EOT;
@@ -797,7 +773,7 @@ bool CMMDVMController::findModem()
 	while (!m_stopped) {
 		count++;
 		if (count >= 4U) {
-			wxLogMessage(wxT("Trying to reopen the modem"));
+			wxLogMessage("Trying to reopen the modem");
 
 			bool ret = findPort();
 			if (ret) {
@@ -809,7 +785,7 @@ bool CMMDVMController::findModem()
 			count = 0U;
 		}
 
-		Sleep(500UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	}
 
 	return false;
@@ -839,30 +815,30 @@ bool CMMDVMController::openModem()
 void CMMDVMController::printDebug()
 {
 	unsigned int length = m_buffer[1U];
-	if (m_buffer[2U] == 0xF1U) {
-		wxString message((char*)(m_buffer + 3U), wxConvLocal, length - 3U);
-		wxLogMessage(wxT("Debug: %s"), message.c_str());
-	} else if (m_buffer[2U] == 0xF2U) {
-		wxString message((char*)(m_buffer + 3U), wxConvLocal, length - 5U);
+	if (m_buffer[2U] == 0xF1U && length >= 4U) {
+		std::string message((char*)(m_buffer + 3U), length - 3U);
+		wxLogMessage("Debug: %s", message.c_str());
+	} else if (m_buffer[2U] == 0xF2U && length >= 5U) {
+		std::string message((char*)(m_buffer + 3U), length - 5U);
 		short val1 = (m_buffer[length - 2U] << 8) | m_buffer[length - 1U];
-		wxLogMessage(wxT("Debug: %s %d"), message.c_str(), val1);
-	} else if (m_buffer[2U] == 0xF3U) {
-		wxString message((char*)(m_buffer + 3U), wxConvLocal, length - 7U);
+		wxLogMessage("Debug: %s %d", message.c_str(), val1);
+	} else if (m_buffer[2U] == 0xF3U && length >= 7U) {
+		std::string message((char*)(m_buffer + 3U), length - 7U);
 		short val1 = (m_buffer[length - 4U] << 8) | m_buffer[length - 3U];
 		short val2 = (m_buffer[length - 2U] << 8) | m_buffer[length - 1U];
-		wxLogMessage(wxT("Debug: %s %d %d"), message.c_str(), val1, val2);
-	} else if (m_buffer[2U] == 0xF4U) {
-		wxString message((char*)(m_buffer + 3U), wxConvLocal, length - 9U);
+		wxLogMessage("Debug: %s %d %d", message.c_str(), val1, val2);
+	} else if (m_buffer[2U] == 0xF4U && length >= 9U) {
+		std::string message((char*)(m_buffer + 3U), length - 9U);
 		short val1 = (m_buffer[length - 6U] << 8) | m_buffer[length - 5U];
 		short val2 = (m_buffer[length - 4U] << 8) | m_buffer[length - 3U];
 		short val3 = (m_buffer[length - 2U] << 8) | m_buffer[length - 1U];
-		wxLogMessage(wxT("Debug: %s %d %d %d"), message.c_str(), val1, val2, val3);
-	} else if (m_buffer[2U] == 0xF5U) {
-		wxString message((char*)(m_buffer + 3U), wxConvLocal, length - 11U);
+		wxLogMessage("Debug: %s %d %d %d", message.c_str(), val1, val2, val3);
+	} else if (m_buffer[2U] == 0xF5U && length >= 11U) {
+		std::string message((char*)(m_buffer + 3U), length - 11U);
 		short val1 = (m_buffer[length - 8U] << 8) | m_buffer[length - 7U];
 		short val2 = (m_buffer[length - 6U] << 8) | m_buffer[length - 5U];
 		short val3 = (m_buffer[length - 4U] << 8) | m_buffer[length - 3U];
 		short val4 = (m_buffer[length - 2U] << 8) | m_buffer[length - 1U];
-		wxLogMessage(wxT("Debug: %s %d %d %d %d"), message.c_str(), val1, val2, val3, val4);
+		wxLogMessage("Debug: %s %d %d %d %d", message.c_str(), val1, val2, val3, val4);
 	}
 }

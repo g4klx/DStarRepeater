@@ -5,9 +5,9 @@ After=network.target
 [Service]
 Environment="WIRINGPI_GPIOMEM=1"
 User=opendv
-ExecStart=/usr/sbin/dstarrepeaterd %i
+ExecStart=/usr/bin/dstarrepeaterd /etc/dstarrepeater/%i.ini
 Restart=on-abort
 
 [Install]
 WantedBy=multi-user.target
-DefaultInstance=1
+DefaultInstance=dstarrepeater

@@ -16,20 +16,40 @@
  *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+/*
+ * Single-producer / single-consumer (SPSC) lock-free ring buffer.
+ *
+ * Used primarily for modem-to-repeater data transfer: the modem driver thread
+ * writes received frames via addData(), while the repeater thread reads them
+ * via getData() or peek().  The atomic m_iPtr (write index) and m_oPtr (read
+ * index) make the empty/full checks safe across exactly two threads without a
+ * mutex, provided each pointer is only advanced by its respective thread.
+ *
+ * Important: this is NOT safe for multiple concurrent producers or consumers.
+ * CModem wraps accesses with a mutex when both threads need stronger ordering
+ * guarantees (e.g. when writing the 2-byte framing header atomically with the
+ * payload).
+ *
+ * The buffer wastes one slot so that iPtr == oPtr always means empty rather
+ * than ambiguously full.  Capacity is therefore (length - 1) elements.
+ */
+
 #ifndef RingBuffer_H
 #define RingBuffer_H
 
-#include <wx/wx.h>
+#include <atomic>
+#include <cassert>
+#include <cstring>
 
 template<class T> class CRingBuffer {
 public:
 	CRingBuffer(unsigned int length) :
 	m_length(length),
-	m_buffer(NULL),
+	m_buffer(nullptr),
 	m_iPtr(0U),
 	m_oPtr(0U)
 	{
-		wxASSERT(length > 0U);
+		assert(length > 0U);
 
 		m_buffer = new T[length];
 
@@ -41,6 +61,8 @@ public:
 		delete[] m_buffer;
 	}
 
+	// Write nSamples elements from buffer.  Returns 0 if there is not enough
+	// free space; the caller must retry or discard.
 	unsigned int addData(const T* buffer, unsigned int nSamples)
 	{
 		if (nSamples > freeSpace())
@@ -56,6 +78,8 @@ public:
 		return nSamples;
 	}
 
+	// Read up to nSamples elements into buffer.  Returns the actual count read
+	// (may be less than requested if the buffer does not have enough data).
 	unsigned int getData(T* buffer, unsigned int nSamples)
 	{
 		unsigned int data = dataSize();
@@ -73,6 +97,7 @@ public:
 		return nSamples;
 	}
 
+	// Like getData() but does not advance the read pointer (non-destructive).
 	unsigned int peek(T* buffer, unsigned int nSamples)
 	{
 		unsigned int data = dataSize();
@@ -112,7 +137,7 @@ public:
 
 	bool hasSpace(unsigned int length) const
 	{
-		return freeSpace() > length;
+		return freeSpace() >= length;
 	}
 
 	bool hasData() const
@@ -126,10 +151,10 @@ public:
 	}
 
 private:
-	unsigned int          m_length;
-	T*                    m_buffer;
-	volatile unsigned int m_iPtr;
-	volatile unsigned int m_oPtr;
+	unsigned int              m_length;   // Allocated slot count (capacity + 1)
+	T*                        m_buffer;
+	std::atomic<unsigned int> m_iPtr;     // Write index; advanced only by the producer
+	std::atomic<unsigned int> m_oPtr;     // Read index; advanced only by the consumer
 
 	unsigned int dataSize() const
 	{

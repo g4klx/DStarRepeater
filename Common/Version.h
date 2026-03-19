@@ -16,17 +16,15 @@
  *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+// Application vendor and build-date version string, reported in the GUI title
+// bar and log output at startup.
+
 #ifndef	Version_H
 #define	Version_H
 
-#include <wx/wx.h>
+#include <string>
 
-const wxString VENDOR_NAME = wxT("G4KLX");
-
-#if defined(__WXDEBUG__)
-const wxString VERSION = wxT("20180911 - DEBUG");
-#else
-const wxString VERSION = wxT("20180911");
-#endif
+inline const std::string VENDOR_NAME = "G4KLX";
+inline const std::string VERSION     = "20260319";
 
 #endif

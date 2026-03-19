@@ -22,8 +22,14 @@
 #if defined(MQTT)
 
 /*
- * Display-Driver-compatible MQTT JSON publishing for DStarRepeater.
+ * Inline helper functions that format and publish D-Star events as JSON to the
+ * MQTT broker via the global g_mqtt (CMQTTConnection*) instance.
  *
+ * All helpers are no-ops when g_mqtt is nullptr (MQTT not configured) or when
+ * the broker is not connected.  They publish to the "json" sub-topic, which is
+ * automatically prefixed with the configured repeater name by CMQTTConnection.
+ *
+ * Display-Driver-compatible MQTT JSON publishing for DStarRepeater:
  * Publishes event-driven JSON messages to the "json" topic in the format
  * expected by Display-Driver, enabling LCD/OLED display output.
  *
@@ -35,16 +41,44 @@
 #include "MQTTConnection.h"
 #include "Logger.h"
 
-#include <wx/wx.h>
-
+#include <string>
 #include <cstdio>
 
-// Publish a D-Star call start event (RF or network)
-static inline void mqttPublishDStarStart(const wxString& myCall1, const wxString& myCall2,
-	const wxString& yourCall, const wxString& rptCall2, const char* source)
+// Escape a string for safe embedding in a JSON value.
+// Handles the characters that would break JSON string syntax or silently
+// corrupt the document: backslash, double-quote, and the common C0 controls.
+// Non-printable control characters other than \n/\r/\t are dropped entirely
+// so that malformed radio headers cannot produce invalid JSON.
+static inline std::string jsonEscape(const std::string& s)
 {
-	if (g_mqtt == NULL)
+	std::string out;
+	out.reserve(s.size());
+	for (char c : s) {
+		if      (c == '"')  out += "\\\"";
+		else if (c == '\\') out += "\\\\";
+		else if (c == '\n') out += "\\n";
+		else if (c == '\r') out += "\\r";
+		else if (c == '\t') out += "\\t";
+		else if (c >= 0x20) out += c;
+		// drop other non-printable control characters
+	}
+	return out;
+}
+
+// Publish a D-Star call start event (RF or network)
+static inline void mqttPublishDStarStart(const std::string& myCall1, const std::string& myCall2,
+	const std::string& yourCall, const std::string& rptCall2, const char* source)
+{
+	if (g_mqtt == nullptr)
 		return;
+
+	// Escape all callsign strings: over-the-air headers are untrusted input
+	// and may contain characters (e.g. '"' or '\') that break JSON syntax.
+	// 'source' is a string literal supplied by our own code, not radio data.
+	const std::string cs1 = jsonEscape(myCall1);
+	const std::string cs2 = jsonEscape(myCall2);
+	const std::string yc  = jsonEscape(yourCall);
+	const std::string rc2 = jsonEscape(rptCall2);
 
 	char buf[512];
 	::snprintf(buf, sizeof(buf),
@@ -52,10 +86,10 @@ static inline void mqttPublishDStarStart(const wxString& myCall1, const wxString
 		"\"source_cs\":\"%s\",\"source_ext\":\"%s\","
 		"\"destination_cs\":\"%s\",\"reflector\":\"%s\","
 		"\"source\":\"%s\"}}",
-		(const char*)myCall1.mb_str(),
-		(const char*)myCall2.mb_str(),
-		(const char*)yourCall.mb_str(),
-		(const char*)rptCall2.mb_str(),
+		cs1.c_str(),
+		cs2.c_str(),
+		yc.c_str(),
+		rc2.c_str(),
 		source);
 
 	g_mqtt->publish("json", buf);
@@ -64,7 +98,7 @@ static inline void mqttPublishDStarStart(const wxString& myCall1, const wxString
 // Publish a D-Star call end event (normal termination)
 static inline void mqttPublishDStarEnd()
 {
-	if (g_mqtt == NULL)
+	if (g_mqtt == nullptr)
 		return;
 
 	g_mqtt->publish("json", "{\"D-Star\":{\"action\":\"end\"}}");
@@ -73,7 +107,7 @@ static inline void mqttPublishDStarEnd()
 // Publish a D-Star call lost event (watchdog timeout / abnormal)
 static inline void mqttPublishDStarLost()
 {
-	if (g_mqtt == NULL)
+	if (g_mqtt == nullptr)
 		return;
 
 	g_mqtt->publish("json", "{\"D-Star\":{\"action\":\"lost\"}}");
@@ -82,16 +116,30 @@ static inline void mqttPublishDStarLost()
 // Publish idle mode (no traffic)
 static inline void mqttPublishIdle()
 {
-	if (g_mqtt == NULL)
+	if (g_mqtt == nullptr)
 		return;
 
 	g_mqtt->publish("json", "{\"MMDVM\":{\"mode\":\"idle\"}}");
 }
 
+// Publish D-Star RSSI value (DVAP signal strength in dBm)
+static inline void mqttPublishRSSI(int rssi)
+{
+	if (g_mqtt == nullptr)
+		return;
+
+	char buf[128];
+	::snprintf(buf, sizeof(buf),
+		"{\"RSSI\":{\"mode\":\"D-Star\",\"value\":%d}}",
+		rssi);
+
+	g_mqtt->publish("json", buf);
+}
+
 // Publish D-Star BER value
 static inline void mqttPublishBER(float ber)
 {
-	if (g_mqtt == NULL)
+	if (g_mqtt == nullptr)
 		return;
 
 	char buf[128];
@@ -103,15 +151,19 @@ static inline void mqttPublishBER(float ber)
 }
 
 // Publish D-Star slow data text
-static inline void mqttPublishText(const wxString& text)
+static inline void mqttPublishText(const std::string& text)
 {
-	if (g_mqtt == NULL)
+	if (g_mqtt == nullptr)
 		return;
+
+	// Slow-data text arrives over the air and is untrusted; escape it so
+	// that a crafted transmission cannot produce malformed JSON.
+	const std::string escaped = jsonEscape(text);
 
 	char buf[256];
 	::snprintf(buf, sizeof(buf),
 		"{\"Text\":{\"mode\":\"D-Star\",\"value\":\"%s\"}}",
-		(const char*)text.mb_str());
+		escaped.c_str());
 
 	g_mqtt->publish("json", buf);
 }

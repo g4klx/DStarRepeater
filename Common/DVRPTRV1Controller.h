@@ -23,8 +23,9 @@
 #include "RingBuffer.h"
 #include "Modem.h"
 #include "Utils.h"
+#include "StdCompat.h"
 
-#include <wx/wx.h>
+#include <string>
 
 enum RESP_TYPE_V1 {
 	RT1_TIMEOUT,
@@ -45,12 +46,27 @@ enum RESP_TYPE_V1 {
 	RT1_SET_TESTMDE
 };
 
+/*
+ * CDVRPTRV1Controller - Driver for DV-RPTR V1 boards via serial (USB CDC-ACM, 115200 baud).
+ *
+ * Uses the same DVRPTR binary framing protocol as CDVMegaController:
+ *   [0xD0] [len_lo] [len_hi] [type] [txCounter] [pktCounter] [payload...] [cksum]
+ *
+ * Hardware-specific parameters passed to SET_CONFIG (physical layer):
+ *   channel   - selects which of the two physical input channels to use (bit 0x04
+ *               in the config byte).  Some V1 boards have two discriminator inputs.
+ *   modLevel  - output modulation level, 0-100%, scaled to 0-255 in the wire frame.
+ *               Sets the DAC drive level for the TX audio path.
+ *   txDelay   - PTT-to-data delay in milliseconds (little-endian uint16_t in frame).
+ *               Allows time for the radio to reach full output power before
+ *               transmitting the D-Star preamble.
+ *
+ * Reconnection and sysfs path tracking work identically to CDVMegaController.
+ */
 class CDVRPTRV1Controller : public CModem {
 public:
-	CDVRPTRV1Controller(const wxString& port, const wxString& path, bool rxInvert, bool txInvert, bool channel, unsigned int modLevel, unsigned int txDelay);
+	CDVRPTRV1Controller(const std::string& port, const std::string& path, bool rxInvert, bool txInvert, bool channel, unsigned int modLevel, unsigned int txDelay);
 	virtual ~CDVRPTRV1Controller();
-
-	virtual void* Entry();
 
 	virtual bool start();
 
@@ -60,11 +76,13 @@ public:
 	virtual bool writeHeader(const CHeaderData& header);
 	virtual bool writeData(const unsigned char* data, unsigned int length, bool end);
 
-	virtual wxString getPath() const;
+	virtual std::string getPath() const;
 
 private:
-	wxString                   m_port;
-	wxString                   m_path;
+	void entry();
+
+	std::string                m_port;
+	std::string                m_path;
 	bool                       m_rxInvert;
 	bool                       m_txInvert;
 	bool                       m_channel;
@@ -95,4 +113,3 @@ private:
 };
 
 #endif
-

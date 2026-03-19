@@ -19,22 +19,32 @@
 #ifndef	CallsignList_H
 #define	CallsignList_H
 
-#include <wx/wx.h>
+#include "StdCompat.h"
 
+/*
+ * Loads a callsign access list (whitelist, blacklist, or greylist) from a
+ * plain-text file, one callsign per line.
+ *
+ * Each entry is normalised on load: converted to uppercase and padded/truncated
+ * to exactly LONG_CALLSIGN_LENGTH (8) characters with trailing spaces.  This
+ * matches the fixed-width format used in D-Star radio headers, so isInList()
+ * can do a simple string comparison without any normalisation at call time.
+ */
 class CCallsignList {
 public:
-	CCallsignList(const wxString& filename);
+	CCallsignList(const std::string& filename);
 	~CCallsignList();
 
 	bool load();
 
 	unsigned int getCount() const;
 
-	bool isInList(const wxString& callsign) const;
+	// Returns true if callsign (already padded to 8 chars) is in the list.
+	bool isInList(const std::string& callsign) const;
 
 private:
-	wxString      m_filename;
-	wxArrayString m_callsigns;
+	std::string              m_filename;
+	std::vector<std::string> m_callsigns;
 };
 
 #endif

@@ -20,13 +20,19 @@
 #include "DVMegaController.h"
 #include "CCITTChecksum.h"
 #include "DStarDefines.h"
+#include "Logger.h"
 #include "Timer.h"
 #include "Utils.h"
 
-#if defined(__WINDOWS__)
-#include <setupapi.h>
-#else
-#include <wx/dir.h>
+#include <chrono>
+#include <thread>
+#include <cassert>
+#include <cstring>
+#include <cstdio>
+#include "EndianCompat.h"
+#if !defined(_WIN32)
+#include <dirent.h>
+#include <unistd.h>
 #endif
 
 const unsigned char DVRPTR_HEADER_LENGTH = 5U;
@@ -57,7 +63,7 @@ const unsigned int MAX_RESPONSES = 30U;
 
 const unsigned int BUFFER_LENGTH = 200U;
 
-CDVMegaController::CDVMegaController(const wxString& port, const wxString& path, bool rxInvert, bool txInvert, unsigned int txDelay) :
+CDVMegaController::CDVMegaController(const std::string& port, const std::string& path, bool rxInvert, bool txInvert, unsigned int txDelay) :
 CModem(),
 m_port(port),
 m_path(path),
@@ -68,7 +74,7 @@ m_rxFrequency(0U),
 m_txFrequency(0U),
 m_power(0U),
 m_serial(port, SERIAL_115200, true),
-m_buffer(NULL),
+m_buffer(nullptr),
 m_txData(1000U),
 m_txCounter(0U),
 m_pktCounter(0U),
@@ -77,12 +83,12 @@ m_txSpace(0U),
 m_txEnabled(false),
 m_checksum(false)
 {
-	wxASSERT(!port.IsEmpty());
+	assert(!port.empty());
 
 	m_buffer = new unsigned char[BUFFER_LENGTH];
 }
 
-CDVMegaController::CDVMegaController(const wxString& port, const wxString& path, unsigned int txDelay, unsigned int rxFrequency, unsigned int txFrequency, unsigned int power) :
+CDVMegaController::CDVMegaController(const std::string& port, const std::string& path, unsigned int txDelay, unsigned int rxFrequency, unsigned int txFrequency, unsigned int power) :
 CModem(),
 m_port(port),
 m_path(path),
@@ -93,7 +99,7 @@ m_rxFrequency(rxFrequency),
 m_txFrequency(txFrequency),
 m_power(power),
 m_serial(port, SERIAL_115200, true),
-m_buffer(NULL),
+m_buffer(nullptr),
 m_txData(1000U),
 m_txCounter(0U),
 m_pktCounter(0U),
@@ -102,11 +108,11 @@ m_txSpace(0U),
 m_txEnabled(false),
 m_checksum(false)
 {
-	wxASSERT(!port.IsEmpty());
-	wxASSERT((rxFrequency >= 144000000U && rxFrequency <= 148000000U) ||
-			 (rxFrequency >= 420000000U && rxFrequency <= 450000000U));
-	wxASSERT((txFrequency >= 144000000U && txFrequency <= 148000000U) ||
-			 (txFrequency >= 420000000U && txFrequency <= 450000000U));
+	assert(!port.empty());
+	assert((rxFrequency >= 144000000U && rxFrequency <= 148000000U) ||
+		   (rxFrequency >= 420000000U && rxFrequency <= 450000000U));
+	assert((txFrequency >= 144000000U && txFrequency <= 148000000U) ||
+		   (txFrequency >= 420000000U && txFrequency <= 450000000U));
 
 	m_buffer = new unsigned char[BUFFER_LENGTH];
 }
@@ -126,16 +132,14 @@ bool CDVMegaController::start()
 
 	findPath();
 
-	Create();
-	SetPriority(100U);
-	Run();
+	m_thread = std::thread(&CDVMegaController::entry, this);
 
 	return true;
 }
 
-void* CDVMegaController::Entry()
+void CDVMegaController::entry()
 {
-	wxLogMessage(wxT("Starting DVMEGA Controller thread"));
+	wxLogMessage("Starting DVMEGA Controller thread");
 
 	// Clock every 5ms-ish
 	CTimer pollTimer(200U, 0U, 100U);
@@ -154,8 +158,9 @@ void* CDVMegaController::Entry()
 			if (!ret) {
 				ret = findModem();
 				if (!ret) {
-					wxLogMessage(wxT("Stopping DVMEGA Controller thread"));
-					return NULL;
+					wxLogMessage("Stopping DVMEGA Controller thread");
+					delete[] writeBuffer;
+					return;
 				}
 			}
 
@@ -172,29 +177,30 @@ void* CDVMegaController::Entry()
 			case RTM_ERROR: {
 					bool ret = findModem();
 					if (!ret) {
-						wxLogMessage(wxT("Stopping DVMEGA Controller thread"));
-						return NULL;
+						wxLogMessage("Stopping DVMEGA Controller thread");
+						delete[] writeBuffer;
+						return;
 					}
 				}
 				break;
 
 			case RTM_RXPREAMBLE:
-				// wxLogMessage(wxT("RT_PREAMBLE"));
+				// wxLogMessage("RT_PREAMBLE");
 				break;
 
 			case RTM_START:
-				// wxLogMessage(wxT("RT_START"));
+				// wxLogMessage("RT_START");
 				break;
 
 			case RTM_HEADER:
-				CUtils::dump(wxT("RT_HEADER"), m_buffer, length);
+				CUtils::dump("RT_HEADER", m_buffer, length);
 				if (length == 7U) {
 					if (m_buffer[4U] == DVRPTR_NAK)
-						wxLogWarning(wxT("Received a header NAK from the DVMEGA"));
+						wxLogWarning("Received a header NAK from the DVMEGA");
 				} else {
 					bool correct = (m_buffer[5U] & 0x80U) == 0x00U;
 					if (correct) {
-						wxMutexLocker locker(m_mutex);
+						std::lock_guard<std::mutex> lock(m_mutex);
 
 						unsigned char data[2U];
 						data[0U] = DSMTT_HEADER;
@@ -209,16 +215,16 @@ void* CDVMegaController::Entry()
 				break;
 
 			case RTM_RXSYNC:
-				// wxLogMessage(wxT("RT_RXSYNC"));
+				// wxLogMessage("RT_RXSYNC");
 				break;
 
 			case RTM_DATA:
-				CUtils::dump(wxT("RT_DATA"), m_buffer, length);
+				CUtils::dump("RT_DATA", m_buffer, length);
 				if (length == 7U) {
 					if (m_buffer[4U] == DVRPTR_NAK)
-						wxLogWarning(wxT("Received a data NAK from the DVMEGA"));
+						wxLogWarning("Received a data NAK from the DVMEGA");
 				} else {
-					wxMutexLocker locker(m_mutex);
+					std::lock_guard<std::mutex> lock(m_mutex);
 
 					unsigned char data[2U];
 					data[0U] = DSMTT_DATA;
@@ -232,8 +238,8 @@ void* CDVMegaController::Entry()
 				break;
 
 			case RTM_EOT: {
-					// wxLogMessage(wxT("RT_EOT"));
-					wxMutexLocker locker(m_mutex);
+					// wxLogMessage("RT_EOT");
+					std::lock_guard<std::mutex> lock(m_mutex);
 
 					unsigned char data[2U];
 					data[0U] = DSMTT_EOT;
@@ -245,8 +251,8 @@ void* CDVMegaController::Entry()
 				break;
 
 			case RTM_RXLOST: {
-					// wxLogMessage(wxT("RT_LOST"));
-					wxMutexLocker locker(m_mutex);
+					// wxLogMessage("RT_LOST");
+					std::lock_guard<std::mutex> lock(m_mutex);
 
 					unsigned char data[2U];
 					data[0U] = DSMTT_LOST;
@@ -263,8 +269,8 @@ void* CDVMegaController::Entry()
 					m_tx        = (m_buffer[5U] & 0x02U) == 0x02U;
 					m_txSpace   = m_buffer[8U];
 					space       = m_txSpace - m_buffer[9U];
-					// CUtils::dump(wxT("GET_STATUS"), m_buffer, length);
-					// wxLogMessage(wxT("PTT=%d tx=%u space=%u cksum=%d, tx enabled=%d"), int(m_tx), m_txSpace, space, int(m_checksum), int(m_txEnabled));
+					// CUtils::dump("GET_STATUS", m_buffer, length);
+					// wxLogMessage("PTT=%d tx=%u space=%u cksum=%d, tx enabled=%d", int(m_tx), m_txSpace, space, int(m_checksum), int(m_txEnabled));
 				}
 				break;
 
@@ -275,14 +281,14 @@ void* CDVMegaController::Entry()
 				break;
 
 			default:
-				wxLogMessage(wxT("Unknown message, type: %02X"), m_buffer[3U]);
-				CUtils::dump(wxT("Buffer dump"), m_buffer, length);
+				wxLogMessage("Unknown message, type: %02X", m_buffer[3U]);
+				CUtils::dump("Buffer dump", m_buffer, length);
 				break;
 		}
 
 		if (space > 0U) {
 			if (writeType == DSMTT_NONE && m_txData.hasData()) {
-				wxMutexLocker locker(m_mutex);
+				std::lock_guard<std::mutex> lock(m_mutex);
 
 				m_txData.getData(&writeType, 1U);
 				m_txData.getData(&writeLength, 1U);
@@ -291,53 +297,51 @@ void* CDVMegaController::Entry()
 
 			// Only send the start when the TX is off
 			if (!m_tx && writeType == DSMTT_START) {
-				// CUtils::dump(wxT("Write Header"), writeBuffer, writeLength);
+				// CUtils::dump("Write Header", writeBuffer, writeLength);
 
 				int ret = m_serial.write(writeBuffer, writeLength);
 				if (ret != int(writeLength))
-					wxLogWarning(wxT("Error when writing the header to the DVMEGA"));
+					wxLogWarning("Error when writing the header to the DVMEGA");
 
 				writeType = DSMTT_NONE;
 				space--;
 			}
 
 			if (space > 4U && writeType == DSMTT_HEADER) {
-				// CUtils::dump(wxT("Write Header"), writeBuffer, writeLength);
+				// CUtils::dump("Write Header", writeBuffer, writeLength);
 
 				int ret = m_serial.write(writeBuffer, writeLength);
 				if (ret != int(writeLength))
-					wxLogWarning(wxT("Error when writing the header to the DVMEGA"));
+					wxLogWarning("Error when writing the header to the DVMEGA");
 
 				writeType = DSMTT_NONE;
 				space -= 4U;
 			}
 
 			if (writeType == DSMTT_DATA || writeType == DSMTT_EOT) {
-				// CUtils::dump(wxT("Write Data"), writeBuffer, writeLength);
+				// CUtils::dump("Write Data", writeBuffer, writeLength);
 
 				int ret = m_serial.write(writeBuffer, writeLength);
 				if (ret != int(writeLength))
-					wxLogWarning(wxT("Error when writing data to the DVMEGA"));
+					wxLogWarning("Error when writing data to the DVMEGA");
 
 				writeType = DSMTT_NONE;
 				space--;
 			}
 		}
 
-		Sleep(5UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
 		pollTimer.clock();
 	}
 
-	wxLogMessage(wxT("Stopping DVMEGA Controller thread"));
+	wxLogMessage("Stopping DVMEGA Controller thread");
 
 	setEnabled(false);
 
 	delete[] writeBuffer;
 
 	m_serial.close();
-
-	return NULL;
 }
 
 bool CDVMegaController::writeHeader(const CHeaderData& header)
@@ -347,7 +351,7 @@ bool CDVMegaController::writeHeader(const CHeaderData& header)
 
 	bool ret = m_txData.hasSpace(64U);
 	if (!ret) {
-		wxLogWarning(wxT("No space to write the header"));
+		wxLogWarning("No space to write the header");
 		return false;
 	}
 
@@ -397,25 +401,25 @@ bool CDVMegaController::writeHeader(const CHeaderData& header)
 	buffer2[9U]  = header.getFlag2();
 	buffer2[10U] = header.getFlag3();
 
-	wxString rpt2 = header.getRptCall2();
-	for (unsigned int i = 0U; i < rpt2.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer2[i + 11U]  = rpt2.GetChar(i);
+	std::string rpt2 = header.getRptCall2();
+	for (unsigned int i = 0U; i < rpt2.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer2[i + 11U]  = rpt2[i];
 
-	wxString rpt1 = header.getRptCall1();
-	for (unsigned int i = 0U; i < rpt1.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer2[i + 19U] = rpt1.GetChar(i);
+	std::string rpt1 = header.getRptCall1();
+	for (unsigned int i = 0U; i < rpt1.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer2[i + 19U] = rpt1[i];
 
-	wxString your = header.getYourCall();
-	for (unsigned int i = 0U; i < your.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer2[i + 27U] = your.GetChar(i);
+	std::string your = header.getYourCall();
+	for (unsigned int i = 0U; i < your.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer2[i + 27U] = your[i];
 
-	wxString my1 = header.getMyCall1();
-	for (unsigned int i = 0U; i < my1.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer2[i + 35U] = my1.GetChar(i);
+	std::string my1 = header.getMyCall1();
+	for (unsigned int i = 0U; i < my1.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer2[i + 35U] = my1[i];
 
-	wxString my2 = header.getMyCall2();
-	for (unsigned int i = 0U; i < my2.Len() && i < SHORT_CALLSIGN_LENGTH; i++)
-		buffer2[i + 43U] = my2.GetChar(i);
+	std::string my2 = header.getMyCall2();
+	for (unsigned int i = 0U; i < my2.size() && i < SHORT_CALLSIGN_LENGTH; i++)
+		buffer2[i + 43U] = my2[i];
 
 	CCCITTChecksumReverse cksum1;
 	cksum1.update(buffer2 + 8U, RADIO_HEADER_LENGTH_BYTES - 2U);
@@ -434,7 +438,7 @@ bool CDVMegaController::writeHeader(const CHeaderData& header)
 
 	m_pktCounter = 0U;
 
-	wxMutexLocker locker(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 
 	unsigned char type1 = DSMTT_START;
 	m_txData.addData(&type1, 1U);
@@ -462,7 +466,7 @@ bool CDVMegaController::writeData(const unsigned char* data, unsigned int, bool 
 
 	bool ret = m_txData.hasSpace(26U);
 	if (!ret) {
-		wxLogWarning(wxT("No space to write data"));
+		wxLogWarning("No space to write data");
 		return false;
 	}
 
@@ -488,7 +492,7 @@ bool CDVMegaController::writeData(const unsigned char* data, unsigned int, bool 
 			buffer[7U] = 0x0BU;
 		}
 
-		wxMutexLocker locker(m_mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);
 
 		unsigned char type = DSMTT_EOT;
 		m_txData.addData(&type, 1U);
@@ -532,7 +536,7 @@ bool CDVMegaController::writeData(const unsigned char* data, unsigned int, bool 
 		buffer[23U] = 0x0BU;
 	}
 
-	wxMutexLocker locker(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 
 	unsigned char type = DSMTT_DATA;
 	m_txData.addData(&type, 1U);
@@ -579,36 +583,43 @@ bool CDVMegaController::readVersion()
 			buffer[5U] = 0x0BU;
 		}
 
-		// CUtils::dump(wxT("Written"), buffer, 6U);
+		// CUtils::dump("Written", buffer, 6U);
 
 		int ret = m_serial.write(buffer, 6U);
 		if (ret != 6)
 			return false;
 
 		for (unsigned int count = 0U; count < MAX_RESPONSES; count++) {
-			::wxMilliSleep(10UL);
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 			unsigned int length;
 			RESP_TYPE_MEGA resp = getResponse(m_buffer, length);
 			if (resp == RTM_GET_VERSION) {
-				wxString firmware;
+				char firmware[32];
 				if ((m_buffer[4U] & 0x0FU) > 0x00U)
-					firmware.Printf(wxT("%u.%u%u%c"), (m_buffer[5U] & 0xF0U) >> 4, m_buffer[5U] & 0x0FU, (m_buffer[4U] & 0xF0U) >> 4, (m_buffer[4U] & 0x0FU) + wxT('a') - 1U);
+					::snprintf(firmware, sizeof(firmware), "%u.%u%u%c",
+						(m_buffer[5U] & 0xF0U) >> 4,
+						m_buffer[5U] & 0x0FU,
+						(m_buffer[4U] & 0xF0U) >> 4,
+						(m_buffer[4U] & 0x0FU) + 'a' - 1U);
 				else
-					firmware.Printf(wxT("%u.%u%u"), (m_buffer[5U] & 0xF0U) >> 4, m_buffer[5U] & 0x0FU, (m_buffer[4U] & 0xF0U) >> 4);
+					::snprintf(firmware, sizeof(firmware), "%u.%u%u",
+						(m_buffer[5U] & 0xF0U) >> 4,
+						m_buffer[5U] & 0x0FU,
+						(m_buffer[4U] & 0xF0U) >> 4);
 
-				wxString hardware((char*)(m_buffer + 6U), wxConvLocal, length - DVRPTR_HEADER_LENGTH - 3U);
+				std::string hardware((char*)(m_buffer + 6U), length - DVRPTR_HEADER_LENGTH - 3U);
 
-				wxLogInfo(wxT("DVMEGA Firmware version: %s, hardware: %s"), firmware.c_str(), hardware.c_str());
+				wxLogInfo("DVMEGA Firmware version: %s, hardware: %s", firmware, hardware.c_str());
 
 				return true;
 			}
 		}
 
-		::wxSleep(1);
+		std::this_thread::sleep_for(std::chrono::seconds(1));
 	}
 
-	wxLogError(wxT("Unable to read the firmware version after six attempts"));
+	wxLogError("Unable to read the firmware version after six attempts");
 
 	return false;
 }
@@ -657,8 +668,8 @@ bool CDVMegaController::setConfig()
 	if (m_txInvert)
 		buffer[6U] |= 0x02U;
 
-	wxUint16* txDelay = (wxUint16*)(buffer + 8U);
-	*txDelay = wxUINT16_SWAP_ON_BE(m_txDelay);
+	uint16_t txDelay = htole16((uint16_t)m_txDelay);
+	::memcpy(buffer + 8U, &txDelay, sizeof(uint16_t));
 
 	if (m_checksum) {
 		CCCITTChecksum cksum;
@@ -669,7 +680,7 @@ bool CDVMegaController::setConfig()
 		buffer[11U] = 0x0BU;
 	}
 
-	// CUtils::dump(wxT("Written"), buffer, 12U);
+	// CUtils::dump("Written", buffer, 12U);
 
 	int ret = m_serial.write(buffer, 12U);
 	if (ret != 12)
@@ -680,24 +691,24 @@ bool CDVMegaController::setConfig()
 	RESP_TYPE_MEGA resp;
 	do {
 
-		::wxMilliSleep(10UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RTM_SET_CONFIG) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The DVMEGA is not responding to the SET_CONFIG command"));
+				wxLogError("The DVMEGA is not responding to the SET_CONFIG command");
 				return false;
 			}
 		}
 	} while (resp != RTM_SET_CONFIG);
 
-	// CUtils::dump(wxT("Response"), m_buffer, length);
+	// CUtils::dump("Response", m_buffer, length);
 
 	unsigned char type = m_buffer[4U];
 	if (type != DVRPTR_ACK) {
-		wxLogError(wxT("Received a NAK to the SET_CONFIG command from the modem"));
+		wxLogError("Received a NAK to the SET_CONFIG command from the modem");
 		return false;
 	}
 
@@ -721,11 +732,11 @@ bool CDVMegaController::setFrequencyAndPower()
 
 	buffer[5U] = 0x0CU;		// Block length
 
-	wxUint32 rxFreq = wxUINT32_SWAP_ON_BE(wxUint32(m_rxFrequency));
-	wxUint32 txFreq = wxUINT32_SWAP_ON_BE(wxUint32(m_txFrequency));
+	uint32_t rxFreq = htole32((uint32_t)m_rxFrequency);
+	uint32_t txFreq = htole32((uint32_t)m_txFrequency);
 
-	::memcpy(buffer + 7U,  &rxFreq, sizeof(wxUint32));
-	::memcpy(buffer + 11U, &txFreq, sizeof(wxUint32));
+	::memcpy(buffer + 7U,  &rxFreq, sizeof(uint32_t));
+	::memcpy(buffer + 11U, &txFreq, sizeof(uint32_t));
 
 	buffer[16U] = (m_power * 64U) / 100U;
 
@@ -738,7 +749,7 @@ bool CDVMegaController::setFrequencyAndPower()
 		buffer[20U] = 0x0BU;
 	}
 
-	// CUtils::dump(wxT("Written"), buffer, 21U);
+	// CUtils::dump("Written", buffer, 21U);
 
 	int ret = m_serial.write(buffer, 21U);
 	if (ret != 21)
@@ -749,24 +760,24 @@ bool CDVMegaController::setFrequencyAndPower()
 	RESP_TYPE_MEGA resp;
 	do {
 
-		::wxMilliSleep(10UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RTM_SET_CONFIG) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The DVMEGA is not responding to the SET_CONFIG command"));
+				wxLogError("The DVMEGA is not responding to the SET_CONFIG command");
 				return false;
 			}
 		}
 	} while (resp != RTM_SET_CONFIG);
 
-	// CUtils::dump(wxT("Response"), m_buffer, length);
+	// CUtils::dump("Response", m_buffer, length);
 
 	unsigned char type = m_buffer[4U];
 	if (type != DVRPTR_ACK) {
-		wxLogError(wxT("Received a NAK to the SET_CONFIG command from the modem"));
+		wxLogError("Received a NAK to the SET_CONFIG command from the modem");
 		return false;
 	}
 
@@ -799,7 +810,7 @@ bool CDVMegaController::setEnabled(bool enable)
 		buffer[6U] = 0x0BU;
 	}
 
-	// CUtils::dump(wxT("Written"), buffer, 7U);
+	// CUtils::dump("Written", buffer, 7U);
 
 	int ret = m_serial.write(buffer, 7U);
 	if (ret != 7)
@@ -809,36 +820,41 @@ bool CDVMegaController::setEnabled(bool enable)
 	unsigned int length;
 	RESP_TYPE_MEGA resp;
 	do {
-		::wxMilliSleep(10UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 		resp = getResponse(m_buffer, length);
 
 		if (resp != RTM_GET_STATUS) {
 			count++;
 			if (count >= MAX_RESPONSES) {
-				wxLogError(wxT("The DVMEGA is not responding to the SET_STATUS command"));
+				wxLogError("The DVMEGA is not responding to the SET_STATUS command");
 				return false;
 			}
 		}
 	} while (resp != RTM_GET_STATUS);
 
-	// CUtils::dump(wxT("Response"), m_buffer, length);
+	// CUtils::dump("Response", m_buffer, length);
 
 	unsigned char type = m_buffer[4U];
 	if (type != DVRPTR_ACK) {
-		wxLogError(wxT("Received a NAK to the SET_STATUS command from the modem"));
+		wxLogError("Received a NAK to the SET_STATUS command from the modem");
 		return false;
 	}
 
 	return true;
 }
 
+// Reads one complete DVRPTR frame.
+//   Frame header (5 bytes): [0xD0] [len_lo] [len_hi] [type] [...]
+//   length = header bytes 1+2 (payload length, not including header itself).
+//   type has bit 7 set for board responses; strip it before dispatching.
+// Returns RTM_TIMEOUT if no start byte is available, RTM_ERROR on I/O failure.
 RESP_TYPE_MEGA CDVMegaController::getResponse(unsigned char *buffer, unsigned int& length)
 {
 	// Get the start of the frame or nothing at all
 	int ret = m_serial.read(buffer, 1U);
 	if (ret < 0) {
-		wxLogError(wxT("Error when reading from the DVMEGA"));
+		wxLogError("Error when reading from the DVMEGA");
 		return RTM_ERROR;
 	}
 
@@ -853,21 +869,24 @@ RESP_TYPE_MEGA CDVMegaController::getResponse(unsigned char *buffer, unsigned in
 	while (offset < DVRPTR_HEADER_LENGTH) {
 		ret = m_serial.read(buffer + offset, DVRPTR_HEADER_LENGTH - offset);
 		if (ret < 0) {
-			wxLogError(wxT("Error when reading from the DVMEGA"));
+			wxLogError("Error when reading from the DVMEGA");
 			return RTM_ERROR;
 		}
 
 		if (ret > 0)
 			offset += ret;
 
-		if (ret == 0)
-			Sleep(5UL);
+		if (ret == 0) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			if (m_stopped)
+				return RTM_TIMEOUT;
+		}
 	}
 
 	length = buffer[1U] + buffer[2U] * 256U;
 
 	if (length >= 100U) {
-		wxLogError(wxT("Invalid data received from the DVMEGA"));
+		wxLogError("Invalid data received from the DVMEGA");
 		return RTM_ERROR;
 	}
 
@@ -879,20 +898,23 @@ RESP_TYPE_MEGA CDVMegaController::getResponse(unsigned char *buffer, unsigned in
 	while (offset < length) {
 		ret = m_serial.read(buffer + offset + DVRPTR_HEADER_LENGTH, length - offset);
 		if (ret < 0) {
-			wxLogError(wxT("Error when reading from the DVMEGA"));
+			wxLogError("Error when reading from the DVMEGA");
 			return RTM_ERROR;
 		}
 
 		if (ret > 0)
 			offset += ret;
 
-		if (ret == 0)
-			Sleep(5UL);
+		if (ret == 0) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			if (m_stopped)
+				return RTM_TIMEOUT;
+		}
 	}
 
 	length += DVRPTR_HEADER_LENGTH;
 
-	// CUtils::dump(wxT("Received"), buffer, length);
+	// CUtils::dump("Received", buffer, length);
 
 	switch (type) {
 		case DVRPTR_GET_STATUS:
@@ -926,149 +948,100 @@ RESP_TYPE_MEGA CDVMegaController::getResponse(unsigned char *buffer, unsigned in
 	}
 }
 
-wxString CDVMegaController::getPath() const
+std::string CDVMegaController::getPath() const
 {
 	return m_path;
 }
 
 bool CDVMegaController::findPort()
 {
-	if (m_path.IsEmpty())
+	if (m_path.empty())
 		return false;
 
-#if defined(__WINDOWS__)
-#else
-	wxDir dir;
-	bool ret1 = dir.Open(wxT("/sys/class/tty"));
-	if (!ret1) {
-		wxLogError(wxT("Cannot open directory /sys/class/tty"));
+	DIR* dir = ::opendir("/sys/class/tty");
+	if (dir == nullptr) {
+		wxLogError("Cannot open directory /sys/class/tty");
 		return false;
 	}
 
-	wxString fileName;
-	ret1 = dir.GetFirst(&fileName, wxT("ttyACM*"));
-	while (ret1) {
-		wxString path;
-		path.Printf(wxT("/sys/class/tty/%s"), fileName.c_str());
+	struct dirent* entry;
+	while ((entry = ::readdir(dir)) != nullptr) {
+		std::string fileName(entry->d_name);
+
+		// Match ttyACM* entries
+		if (fileName.substr(0, 6) != "ttyACM")
+			continue;
+
+		std::string path = "/sys/class/tty/" + fileName;
 
 		char cpath[255U];
-		::memset(cpath, 0x00U, 255U);
-
-		for (unsigned int i = 0U; i < path.Len(); i++)
-			cpath[i] = path.GetChar(i);
+		::strncpy(cpath, path.c_str(), sizeof(cpath) - 1);
+		cpath[sizeof(cpath) - 1] = '\0';
 
 		char symlink[255U];
-		int ret2 = ::readlink(cpath, symlink, 255U);
+		int ret2 = ::readlink(cpath, symlink, sizeof(symlink) - 1);
 		if (ret2 < 0) {
-			::strcat(cpath, "/device");
-			ret2 = ::readlink(cpath, symlink, 255U);
+			::strncat(cpath, "/device", sizeof(cpath) - ::strlen(cpath) - 1);
+			ret2 = ::readlink(cpath, symlink, sizeof(symlink) - 1);
 			if (ret2 < 0) {
-				wxLogError(wxT("Error from readlink()"));
+				wxLogError("Error from readlink()");
+				::closedir(dir);
 				return false;
 			}
-
-			path = wxString(symlink, wxConvLocal, ret2);
+			symlink[ret2] = '\0';
+			path = std::string(symlink, ret2);
 		} else {
+			symlink[ret2] = '\0';
+			std::string fullPath(symlink, ret2);
 			// Get all but the last section
-			wxString fullPath = wxString(symlink, wxConvLocal, ret2);
-			path = fullPath.BeforeLast(wxT('/'));
+			size_t pos = fullPath.rfind('/');
+			path = (pos != std::string::npos) ? fullPath.substr(0, pos) : fullPath;
 		}
 
-		if (path.IsSameAs(m_path)) {
-			m_port.Printf(wxT("/dev/%s"), fileName.c_str());
+		if (path == m_path) {
+			m_port = "/dev/" + fileName;
 
-			wxLogMessage(wxT("Found modem port of %s based on the path"), m_port.c_str());
+			wxLogMessage("Found modem port of %s based on the path", m_port.c_str());
 
+			::closedir(dir);
 			return true;
 		}
-
-		ret1 = dir.GetNext(&fileName);
 	}
-#endif
 
+	::closedir(dir);
 	return false;
 }
 
 bool CDVMegaController::findPath()
 {
-#if defined(__WINDOWS__)
-#ifdef notdef
-	GUID guids[5U];
-
-	DWORD count;
-	BOOL res = ::SetupDiClassGuidsFromName(L"Multifunction", guids, 5U, &count);
-	if (!res) {
-		wxLogError(wxT("Error from SetupDiClassGuidsFromName: err=%u"), ::GetLastError());
-		return false;
-	}
-
-	for (DWORD i = 0U; i < count; i++) {
-		HDEVINFO devInfo = ::SetupDiGetClassDevs(&guids[i], NULL, NULL, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
-		if (devInfo == INVALID_HANDLE_VALUE) {
-			wxLogError(wxT("Error from SetupDiGetClassDevs: err=%u"), ::GetLastError());
-			return false;
-		}
-
-		SP_DEVICE_INTERFACE_DATA devInfoData;
-		devInfoData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
-
-		for (DWORD index = 0U; ::SetupDiEnumDeviceInterfaces(devInfo, NULL, &guids[i], index, &devInfoData); index++) {
-			// Find the required length of the device structure
-			DWORD length;
-			::SetupDiGetDeviceInterfaceDetail(devInfo, &devInfoData, NULL, 0U, &length, NULL);
-
-			PSP_DEVICE_INTERFACE_DETAIL_DATA detailData = PSP_DEVICE_INTERFACE_DETAIL_DATA(::malloc(length));
-			detailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
-
-			// Get the detailed data into the newly allocated device structure
-			DWORD required;
-			res = ::SetupDiGetDeviceInterfaceDetail(devInfo, &devInfoData, detailData, length, &required, NULL);
-			if (!res) {
-				wxLogError(wxT("Error from SetupDiGetDeviceInterfaceDetail: err=%u"), ::GetLastError());
-				::SetupDiDestroyDeviceInfoList(devInfo);
-				::free(detailData);
-				return false;
-			}
-
-			::free(detailData);
-		}
-
-		::SetupDiDestroyDeviceInfoList(devInfo);
-	}
-
-	return false;
-#endif
-#else
-	wxString path;
-	path.Printf(wxT("/sys/class/tty/%s"), m_port.Mid(5U).c_str());	
+	std::string path = "/sys/class/tty/" + m_port.substr(5U);
 
 	char cpath[255U];
-	::memset(cpath, 0x00U, 255U);
-
-	for (unsigned int i = 0U; i < path.Len(); i++)
-		cpath[i] = path.GetChar(i);
+	::strncpy(cpath, path.c_str(), sizeof(cpath) - 1);
+	cpath[sizeof(cpath) - 1] = '\0';
 
 	char symlink[255U];
-	int ret = ::readlink(cpath, symlink, 255U);
+	int ret = ::readlink(cpath, symlink, sizeof(symlink) - 1);
 	if (ret < 0) {
-		::strcat(cpath, "/device");
-		ret = ::readlink(cpath, symlink, 255U);
+		::strncat(cpath, "/device", sizeof(cpath) - ::strlen(cpath) - 1);
+		ret = ::readlink(cpath, symlink, sizeof(symlink) - 1);
 		if (ret < 0) {
-			wxLogError(wxT("Error from readlink()"));
+			wxLogError("Error from readlink()");
 			return false;
 		}
-
-		path = wxString(symlink, wxConvLocal, ret);
+		symlink[ret] = '\0';
+		path = std::string(symlink, ret);
 	} else {
-		wxString fullPath = wxString(symlink, wxConvLocal, ret);
-		path = fullPath.BeforeLast(wxT('/'));
+		symlink[ret] = '\0';
+		std::string fullPath(symlink, ret);
+		size_t pos = fullPath.rfind('/');
+		path = (pos != std::string::npos) ? fullPath.substr(0, pos) : fullPath;
 	}
 
-	if (m_path.IsEmpty())
-		wxLogMessage(wxT("Found modem path of %s"), path.c_str());
+	if (m_path.empty())
+		wxLogMessage("Found modem path of %s", path.c_str());
 
 	m_path = path;
-#endif
 
 	return true;
 }
@@ -1079,7 +1052,7 @@ bool CDVMegaController::findModem()
 
 	// Tell the repeater that the signal has gone away
 	if (m_rx) {
-		wxMutexLocker locker(m_mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);
 
 		unsigned char data[2U];
 		data[0U] = DSMTT_EOT;
@@ -1095,7 +1068,7 @@ bool CDVMegaController::findModem()
 	while (!m_stopped) {
 		count++;
 		if (count >= 4U) {
-			wxLogMessage(wxT("Trying to reopen the modem"));
+			wxLogMessage("Trying to reopen the modem");
 
 			bool ret = findPort();
 			if (ret) {
@@ -1107,7 +1080,7 @@ bool CDVMegaController::findModem()
 			count = 0U;
 		}
 
-		Sleep(500UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	}
 
 	return false;
@@ -1147,4 +1120,3 @@ bool CDVMegaController::openModem()
 
 	return true;
 }
-

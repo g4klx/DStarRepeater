@@ -13,43 +13,48 @@
 
 #include "Utils.h"
 
-void CUtils::dump(const wxChar* title, const unsigned char* data, unsigned int length)
-{
-	wxASSERT(title != NULL);
-	wxASSERT(data != NULL);
+#include <cassert>
+#include <cctype>
+#include <cstdio>
+#include <string>
 
-	wxLogMessage(wxT("%s"), title);
+void CUtils::dump(const char* title, const unsigned char* data, unsigned int length)
+{
+	assert(title != nullptr);
+	assert(data != nullptr);
+
+	::fprintf(stdout, "%s\n", title);
 
 	unsigned int offset = 0U;
 
 	while (length > 0U) {
-		wxString output;
+		std::string output;
 
 		unsigned int bytes = (length > 16U) ? 16U : length;
 
+		char temp[8];
 		for (unsigned i = 0U; i < bytes; i++) {
-			wxString temp;
-			temp.Printf(wxT("%02X "), data[offset + i]);
+			::snprintf(temp, sizeof(temp), "%02X ", data[offset + i]);
 			output += temp;
 		}
 
 		for (unsigned int i = bytes; i < 16U; i++)
-			output += wxT("   ");
+			output += "   ";
 
-		output += wxT("   *");
+		output += "   *";
 
 		for (unsigned i = 0U; i < bytes; i++) {
 			unsigned char c = data[offset + i];
 
 			if (::isprint(c))
-				output += wxChar(c);
+				output += char(c);
 			else
-				output += wxT('.');
+				output += '.';
 		}
 
-		output += wxT('*');
+		output += '*';
 
-		wxLogMessage(wxT("%04X:  %s"), offset, output.c_str());
+		::fprintf(stdout, "%04X:  %s\n", offset, output.c_str());
 
 		offset += 16U;
 

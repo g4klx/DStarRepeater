@@ -34,23 +34,38 @@
 #include "MQTTPublisher.h"
 #endif
 
-#include <wx/wx.h>
+#include "StdCompat.h"
+#include <atomic>
+#include <chrono>
 
+// CDStarRepeaterTXRXThread — split-site thread (MODE_TXANDRX).
+//
+// Used when the transmitter and receiver are physically separate (e.g. a
+// linked-site repeater connected over a network via the Split modem driver).
+// Both RF paths exist but they are independent: the receive side forwards to
+// the network without local RF retransmission, and the transmit side plays
+// back network audio without echoing RF.
+//
+// The state machine is a lightweight subset of TRXThread:
+//   LISTENING ↔ VALID   (radio path)
+//   LISTENING ↔ NETWORK (network path, guarded by watchdog)
+// No ack, no timeout, no beacon, no announcement, no control commands.
+// The m_transmitting flag tracks whether a network stream is actively playing.
 class CDStarRepeaterTXRXThread : public IDStarRepeaterThread {
 public:
-	CDStarRepeaterTXRXThread(const wxString& type);
+	CDStarRepeaterTXRXThread(const std::string& type);
 	virtual ~CDStarRepeaterTXRXThread();
 
-	virtual void setCallsign(const wxString& callsign, const wxString& gateway, DSTAR_MODE mode, ACK_TYPE ack, bool restriction, bool rpt1Validation, bool dtmfBlanking, bool errorReply);
+	virtual void setCallsign(const std::string& callsign, const std::string& gateway, DSTAR_MODE mode, ACK_TYPE ack, bool restriction, bool rpt1Validation, bool dtmfBlanking, bool errorReply);
 	virtual void setProtocolHandler(CRepeaterProtocolHandler* handler, bool local);
 	virtual void setModem(CModem* modem);
 	virtual void setController(CExternalController* controller, unsigned int activeHangTime);
 	virtual void setTimes(unsigned int timeout, unsigned int ackTime);
-	virtual void setBeacon(unsigned int time, const wxString& text, bool voice, TEXT_LANG language);
-	virtual void setAnnouncement(bool enabled, unsigned int time, const wxString& recordRPT1, const wxString& recordRPT2, const wxString& deleteRPT1, const wxString& deleteRPT2);
+	virtual void setBeacon(unsigned int time, const std::string& text, bool voice, TEXT_LANG language);
+	virtual void setAnnouncement(bool enabled, unsigned int time, const std::string& recordRPT1, const std::string& recordRPT2, const std::string& deleteRPT1, const std::string& deleteRPT2);
 
 	virtual void setOutputs(bool out1, bool out2, bool out3, bool out4);
-	virtual void setLogging(bool logging, const wxString& dir);
+	virtual void setLogging(bool logging, const std::string& dir);
 	virtual void setWhiteList(CCallsignList* list);
 	virtual void setBlackList(CCallsignList* list);
 	virtual void setGreyList(CCallsignList* list);
@@ -58,25 +73,18 @@ public:
 	virtual void shutdown();
 	virtual void startup();
 
-	virtual void command1();
-	virtual void command2();
-	virtual void command3();
-	virtual void command4();
-	virtual void command5();
-	virtual void command6();
-
 	virtual CDStarRepeaterStatusData* getStatus();
 
 	virtual void kill();
 
-	virtual void *Entry();
+	virtual void entry();
 
 private:
-	wxString                   m_type;
+	std::string                m_type;
 	CModem*                    m_modem;
 	CRepeaterProtocolHandler*  m_protocolHandler;
 	CExternalController*       m_controller;
-	wxString                   m_rptCallsign;
+	std::string                m_rptCallsign;
 	CHeaderData*               m_rxHeader;
 	CHeaderData*               m_txHeader;
 	COutputQueue**             m_networkQueue;
@@ -94,7 +102,7 @@ private:
 	bool                       m_tx;
 	bool                       m_transmitting;
 	unsigned int               m_space;
-	bool                       m_killed;
+	std::atomic<bool>          m_killed;
 	CTimer                     m_activeHangTimer;
 	bool                       m_disable;
 	unsigned char*             m_lastData;
@@ -105,8 +113,8 @@ private:
 	unsigned int               m_ambeErrors;
 	unsigned int               m_lastAMBEBits;
 	unsigned int               m_lastAMBEErrors;
-	wxStopWatch                m_headerTime;
-	wxStopWatch                m_packetTime;
+	std::chrono::steady_clock::time_point m_headerTime;
+	std::chrono::steady_clock::time_point m_packetTime;
 	unsigned int               m_packetCount;
 	unsigned int               m_packetSilence;
 

@@ -18,7 +18,12 @@
 
 #include "SerialPortSelector.h"
 
+#if !defined(_WIN32)
 #include <sys/types.h>
+#include <dirent.h>
+#include <cstring>
+#include <algorithm>
+#endif
 
 #if defined(__APPLE__) && defined(__MACH__)
 #include <CoreFoundation/CoreFoundation.h>
@@ -29,19 +34,12 @@
 #include <sys/param.h>
 #include <sys/ioctl.h>
 #include <termios.h>
-#elif defined(__WINDOWS__)
-#include <setupapi.h>
-#include <winioctl.h>
-#else
-#include <wx/dir.h>
 #endif
 
 
-wxArrayString CSerialPortSelector::getDevices()
+std::vector<std::string> CSerialPortSelector::getDevices()
 {
-	wxArrayString devices;
-
-	devices.Alloc(10);
+	std::vector<std::string> devices;
 
 #if defined(__APPLE__) && defined(__MACH__)
 	mach_port_t masterPort;
@@ -50,8 +48,8 @@ wxArrayString CSerialPortSelector::getDevices()
 		return devices;
 
 	CFMutableDictionaryRef match = ::IOServiceMatching(kIOSerialBSDServiceValue);
-	if (match == NULL)
-		wxLogWarning(wxT("IOServiceMatching() returned NULL"));
+	if (match == nullptr)
+		::fprintf(stderr, "IOServiceMatching() returned nullptr\n");
 	else
 		::CFDictionarySetValue(match, CFSTR(kIOSerialBSDTypeKey), CFSTR(kIOSerialBSDRS232Type));
 
@@ -63,80 +61,60 @@ wxArrayString CSerialPortSelector::getDevices()
 	io_object_t modem;
 	while ((modem = ::IOIteratorNext(services))) {
 		CFTypeRef filePath = ::IORegistryEntryCreateCFProperty(modem, CFSTR(kIOCalloutDeviceKey), kCFAllocatorDefault, 0);
-		if (filePath != NULL) {
+		if (filePath != nullptr) {
 			char port[MAXPATHLEN];
 			Boolean result = ::CFStringGetCString((const __CFString*)filePath, port, MAXPATHLEN, kCFStringEncodingASCII);
 			::CFRelease(filePath);
 
 			if (result)
-				devices.Add(port);
+				devices.push_back(port);
 
 			::IOObjectRelease(modem);
 		}
 	}
 
 	::IOObjectRelease(services);
-#elif defined(__WINDOWS__)
-	devices.Add(wxT("\\\\.\\COM1"));
-	devices.Add(wxT("\\\\.\\COM2"));
-	devices.Add(wxT("\\\\.\\COM3"));
-	devices.Add(wxT("\\\\.\\COM4"));
-	devices.Add(wxT("\\\\.\\COM5"));
-	devices.Add(wxT("\\\\.\\COM6"));
-	devices.Add(wxT("\\\\.\\COM7"));
-	devices.Add(wxT("\\\\.\\COM8"));
-	devices.Add(wxT("\\\\.\\COM9"));
-	devices.Add(wxT("\\\\.\\COM10"));
-	devices.Add(wxT("\\\\.\\COM11"));
-	devices.Add(wxT("\\\\.\\COM12"));
-	devices.Add(wxT("\\\\.\\COM13"));
-	devices.Add(wxT("\\\\.\\COM14"));
-	devices.Add(wxT("\\\\.\\COM15"));
-	devices.Add(wxT("\\\\.\\COM16"));
-	devices.Add(wxT("\\\\.\\COM17"));
-	devices.Add(wxT("\\\\.\\COM18"));
-	devices.Add(wxT("\\\\.\\COM19"));
+#elif defined(_WIN32)
+	// Windows: probe COM1 through COM32 with CreateFile.
+	for (int i = 1; i <= 32; ++i) {
+		char portName[16];
+		::sprintf_s(portName, sizeof(portName), "\\\\.\\COM%d", i);
+
+		HANDLE h = ::CreateFileA(portName,
+		                         GENERIC_READ | GENERIC_WRITE,
+		                         0,
+		                         nullptr,
+		                         OPEN_EXISTING,
+		                         FILE_ATTRIBUTE_NORMAL,
+		                         nullptr);
+		if (h != INVALID_HANDLE_VALUE) {
+			::CloseHandle(h);
+			char name[8];
+			::sprintf_s(name, sizeof(name), "COM%d", i);
+			devices.push_back(name);
+		}
+	}
 #else
-	wxDir devDir;
-	bool ret = devDir.Open(wxT("/dev"));
+	// Linux: enumerate /dev for common serial port patterns
+	static const char* const patterns[] = {
+		"ttyACM", "ttyAMA", "ttyS", "ttyUSB", nullptr
+	};
 
-	if (ret) {
-		wxString fileName;
-		ret = devDir.GetFirst(&fileName, wxT("ttyACM*"), wxDIR_FILES);
-
-		while (ret) {
-			fileName.Prepend(wxT("/dev/"));
-			devices.Add(fileName);
-
-			ret = devDir.GetNext(&fileName);
+	DIR* devDir = ::opendir("/dev");
+	if (devDir != nullptr) {
+		struct dirent* entry;
+		while ((entry = ::readdir(devDir)) != nullptr) {
+			if (entry->d_type != DT_CHR && entry->d_type != DT_LNK && entry->d_type != DT_UNKNOWN)
+				continue;
+			for (int i = 0; patterns[i] != nullptr; ++i) {
+				if (::strncmp(entry->d_name, patterns[i], ::strlen(patterns[i])) == 0) {
+					devices.push_back(std::string("/dev/") + entry->d_name);
+					break;
+				}
+			}
 		}
-
-		ret = devDir.GetFirst(&fileName, wxT("ttyAMA*"), wxDIR_FILES);
-
-		while (ret) {
-			fileName.Prepend(wxT("/dev/"));
-			devices.Add(fileName);
-
-			ret = devDir.GetNext(&fileName);
-		}
-
-		ret = devDir.GetFirst(&fileName, wxT("ttyS*"), wxDIR_FILES);
-
-		while (ret) {
-			fileName.Prepend(wxT("/dev/"));
-			devices.Add(fileName);
-
-			ret = devDir.GetNext(&fileName);
-		}
-
-		ret = devDir.GetFirst(&fileName, wxT("ttyUSB*"), wxDIR_FILES);
-
-		while (ret) {
-			fileName.Prepend(wxT("/dev/"));
-			devices.Add(fileName);
-
-			ret = devDir.GetNext(&fileName);
-		}
+		::closedir(devDir);
+		std::sort(devices.begin(), devices.end());
 	}
 #endif
 

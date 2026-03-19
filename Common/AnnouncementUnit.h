@@ -25,11 +25,29 @@
 #include "DStarDefines.h"
 #include "HeaderData.h"
 
-#include <wx/wx.h>
+#include "StdCompat.h"
+#include <chrono>
 
+/*
+ * Records and plays back user announcements stored as .dvtool files.
+ *
+ * Lifecycle:
+ *   Record  — The repeater thread calls writeHeader() then writeData() as
+ *             audio arrives over RF.  The stream is saved to a per-callsign
+ *             file ("Announce_<callsign>.dvtool") in the user's home directory.
+ *
+ *   Playback — startAnnouncement() opens the callsign-specific file if it
+ *              exists, falling back to the global "Announce.dvtool".  It reads
+ *              the header and signals the repeater thread to key up.  clock()
+ *              then releases DV frames at air rate (same wall-clock pacing as
+ *              CBeaconUnit) until the end-of-transmission marker is reached.
+ *
+ *   Delete  — deleteAnnouncement() removes the callsign-specific file so the
+ *             global announcement (or silence) takes effect on the next play.
+ */
 class CAnnouncementUnit {
 public:
-	CAnnouncementUnit(IAnnouncementCallback* handler, const wxString& callsign);
+	CAnnouncementUnit(IAnnouncementCallback* handler, const std::string& callsign);
 	~CAnnouncementUnit();
 
 	bool writeHeader(const CHeaderData& header);
@@ -39,15 +57,16 @@ public:
 
 	void startAnnouncement();
 
+	// Called every repeater tick; releases frames to the transmitter at air rate.
 	void clock();
 
 private:
 	IAnnouncementCallback* m_handler;
-	wxString               m_localFileName;
+	std::string            m_localFileName;  // Callsign-specific filename (no extension).
 	CDVTOOLFileReader      m_reader;
 	CDVTOOLFileWriter      m_writer;
-	wxStopWatch            m_time;
-	unsigned int           m_out;
+	std::chrono::steady_clock::time_point m_time;
+	unsigned int           m_out;      // Frames dispatched so far during playback.
 	bool                   m_sending;
 };
 

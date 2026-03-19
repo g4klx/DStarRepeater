@@ -20,19 +20,39 @@
 
 #if defined(MQTT)
 #include <cstdio>
+#include <string>
+
+// Escape a string for safe embedding in a JSON value.
+// Identical to the copy in MQTTPublisher.h — kept local to avoid a header
+// dependency between DStarRepeater/ and Common/.
+static std::string jsonEscape(const std::string& s)
+{
+	std::string out;
+	out.reserve(s.size());
+	for (char c : s) {
+		if      (c == '"')  out += "\\\"";
+		else if (c == '\\') out += "\\\\";
+		else if (c == '\n') out += "\\n";
+		else if (c == '\r') out += "\\r";
+		else if (c == '\t') out += "\\t";
+		else if (c >= 0x20) out += c;
+		// drop other non-printable control characters
+	}
+	return out;
+}
 #endif
 
-CDStarRepeaterStatusData::CDStarRepeaterStatusData(const wxString& myCall1, const wxString& myCall2,
-													 const wxString& yourCall, const wxString& rptCall1,
-													 const wxString& rptCall2, unsigned char flag1,
+CDStarRepeaterStatusData::CDStarRepeaterStatusData(const std::string& myCall1, const std::string& myCall2,
+													 const std::string& yourCall, const std::string& rptCall1,
+													 const std::string& rptCall2, unsigned char flag1,
 													 unsigned char flag2, unsigned char flag3, bool tx,
 													 DSTAR_RX_STATE rxState, DSTAR_RPT_STATE rptState,
 													 unsigned int timeoutTimer, unsigned int timeoutExpiry,
 													 unsigned int beaconTimer, unsigned int beaconExpiry,
 													 unsigned int announceTimer, unsigned int announceExpiry,
-													 float percent, const wxString& text, const wxString& status1,
-													 const wxString& status2, const wxString& status3,
-													 const wxString& status4, const wxString& status5) :
+													 float percent, const std::string& text, const std::string& status1,
+													 const std::string& status2, const std::string& status3,
+													 const std::string& status4, const std::string& status5) :
 m_myCall1(myCall1),
 m_myCall2(myCall2),
 m_yourCall(yourCall),
@@ -72,27 +92,27 @@ void CDStarRepeaterStatusData::setDVAP(bool squelch, int signal)
 	m_signal  = signal;
 }
 
-wxString CDStarRepeaterStatusData::getMyCall1() const
+std::string CDStarRepeaterStatusData::getMyCall1() const
 {
 	return m_myCall1;
 }
 
-wxString CDStarRepeaterStatusData::getMyCall2() const
+std::string CDStarRepeaterStatusData::getMyCall2() const
 {
 	return m_myCall2;
 }
 
-wxString CDStarRepeaterStatusData::getYourCall() const
+std::string CDStarRepeaterStatusData::getYourCall() const
 {
 	return m_yourCall;
 }
 
-wxString CDStarRepeaterStatusData::getRptCall1() const
+std::string CDStarRepeaterStatusData::getRptCall1() const
 {
 	return m_rptCall1;
 }
 
-wxString CDStarRepeaterStatusData::getRptCall2() const
+std::string CDStarRepeaterStatusData::getRptCall2() const
 {
 	return m_rptCall2;
 }
@@ -172,36 +192,38 @@ float CDStarRepeaterStatusData::getPercent() const
 	return m_percent;
 }
 
-wxString CDStarRepeaterStatusData::getText() const
+std::string CDStarRepeaterStatusData::getText() const
 {
 	return m_text;
 }
 
-wxString CDStarRepeaterStatusData::getStatus1() const
+std::string CDStarRepeaterStatusData::getStatus1() const
 {
 	return m_status1;
 }
 
-wxString CDStarRepeaterStatusData::getStatus2() const
+std::string CDStarRepeaterStatusData::getStatus2() const
 {
 	return m_status2;
 }
 
-wxString CDStarRepeaterStatusData::getStatus3() const
+std::string CDStarRepeaterStatusData::getStatus3() const
 {
 	return m_status3;
 }
 
-wxString CDStarRepeaterStatusData::getStatus4() const
+std::string CDStarRepeaterStatusData::getStatus4() const
 {
 	return m_status4;
 }
 
-wxString CDStarRepeaterStatusData::getStatus5() const
+std::string CDStarRepeaterStatusData::getStatus5() const
 {
 	return m_status5;
 }
 
+// toJSON() serialises the snapshot to a JSON string for MQTT publication.
+// The output format is consumed by Display-Driver and similar monitoring tools.
 #if defined(MQTT)
 static const char* rptStateToString(DSTAR_RPT_STATE state)
 {
@@ -231,7 +253,22 @@ static const char* rxStateToString(DSTAR_RX_STATE state)
 
 std::string CDStarRepeaterStatusData::toJSON() const
 {
-	char buffer[1024];
+	// Escape every field that originates from over-the-air data or gateway
+	// text to prevent JSON injection.  The state-machine strings and the
+	// boolean are produced by our own code and need no escaping.
+	const std::string mc1 = jsonEscape(m_myCall1);
+	const std::string mc2 = jsonEscape(m_myCall2);
+	const std::string yc  = jsonEscape(m_yourCall);
+	const std::string rc1 = jsonEscape(m_rptCall1);
+	const std::string rc2 = jsonEscape(m_rptCall2);
+	const std::string txt = jsonEscape(m_text);
+	const std::string s1  = jsonEscape(m_status1);
+	const std::string s2  = jsonEscape(m_status2);
+	const std::string s3  = jsonEscape(m_status3);
+	const std::string s4  = jsonEscape(m_status4);
+	const std::string s5  = jsonEscape(m_status5);
+
+	char buffer[2048];
 	::snprintf(buffer, sizeof(buffer),
 		"{\"myCall1\":\"%s\",\"myCall2\":\"%s\","
 		"\"yourCall\":\"%s\",\"rptCall1\":\"%s\",\"rptCall2\":\"%s\","
@@ -240,21 +277,21 @@ std::string CDStarRepeaterStatusData::toJSON() const
 		"\"text\":\"%s\","
 		"\"status1\":\"%s\",\"status2\":\"%s\",\"status3\":\"%s\","
 		"\"status4\":\"%s\",\"status5\":\"%s\"}",
-		(const char*)m_myCall1.mb_str(),
-		(const char*)m_myCall2.mb_str(),
-		(const char*)m_yourCall.mb_str(),
-		(const char*)m_rptCall1.mb_str(),
-		(const char*)m_rptCall2.mb_str(),
+		mc1.c_str(),
+		mc2.c_str(),
+		yc.c_str(),
+		rc1.c_str(),
+		rc2.c_str(),
 		m_tx ? "true" : "false",
 		rxStateToString(m_rxState),
 		rptStateToString(m_rptState),
 		m_percent,
-		(const char*)m_text.mb_str(),
-		(const char*)m_status1.mb_str(),
-		(const char*)m_status2.mb_str(),
-		(const char*)m_status3.mb_str(),
-		(const char*)m_status4.mb_str(),
-		(const char*)m_status5.mb_str());
+		txt.c_str(),
+		s1.c_str(),
+		s2.c_str(),
+		s3.c_str(),
+		s4.c_str(),
+		s5.c_str());
 
 	return std::string(buffer);
 }
