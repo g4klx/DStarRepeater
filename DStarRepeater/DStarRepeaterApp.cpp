@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2011-2015,2018 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2011-2015,2018,2025 by Jonathan Naylor G4KLX
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -17,12 +17,27 @@
  */
 
 #include <stdexcept>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cassert>
+#include <csignal>
+#include <thread>
+#include <chrono>
+#include <string>
+#include <vector>
+#if defined(_WIN32)
+#include <windows.h>
+#include <io.h>
+#define F_OK 0
+#define access _access
+#else
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/utsname.h>
+#endif
 
-#include <wx/cmdline.h>
-#include <wx/filename.h>
-#include <wx/event.h>
-
-#include "DStarRepeaterLogRedirect.h"
 #include "DStarRepeaterTXRXThread.h"
 #include "RepeaterProtocolHandler.h"
 #include "DStarRepeaterTRXThread.h"
@@ -49,6 +64,7 @@
 #endif
 #include "DVAPController.h"
 #include "GMSKController.h"
+#include "CallsignList.h"
 #include "DStarDefines.h"
 #include "Version.h"
 #include "Logger.h"
@@ -56,329 +72,48 @@
 #include "MQTTConnection.h"
 #endif
 
-wxIMPLEMENT_APP(CDStarRepeaterApp);
+// ---------------------------------------------------------------------------
+// Signal handling
+// ---------------------------------------------------------------------------
 
-wxDEFINE_EVENT(wxEVT_THREAD_COMMAND, wxThreadEvent);
+static volatile sig_atomic_t g_running = 1;
 
-wxBEGIN_EVENT_TABLE(CDStarRepeaterApp, wxApp)
-	EVT_THREAD(wxEVT_THREAD_COMMAND, CDStarRepeaterApp::OnRemoteCmd)
-wxEND_EVENT_TABLE()
-
-const wxString NAME_PARAM = 		"Repeater Name";
-const wxString NOLOGGING_SWITCH =	"nolog";
-const wxString GUI_SWITCH = 		"gui";
-const wxString LOGDIR_OPTION =		"logdir";
-const wxString CONFDIR_OPTION =		"confdir";
-const wxString AUDIODIR_OPTION =	"audiodir";
-#if (wxUSE_GUI == 1)
-const wxString LOG_BASE_NAME   =	"dstarrepeater";
+#if defined(_WIN32)
+static BOOL WINAPI consoleHandler(DWORD signal) {
+    if (signal == CTRL_C_EVENT || signal == CTRL_CLOSE_EVENT || signal == CTRL_BREAK_EVENT) {
+        g_running = 0;
+        return TRUE;
+    }
+    return FALSE;
+}
 #else
-const wxString LOG_BASE_NAME   =	"dstarrepeaterd";
-#endif
-
-CDStarRepeaterApp::CDStarRepeaterApp() :
-wxApp(),
-#if (wxUSE_GUI == 1)
-m_frame(NULL),
-#endif
-m_name(),
-m_nolog(false),
-m_gui(false),
-m_logDir(),
-m_confDir(),
-m_audioDir(),
-m_thread(NULL),
-m_config(NULL),
-m_checker(NULL),
-m_logChain(NULL)
+static void handleSignal(int /*sig*/)
 {
-}
-
-CDStarRepeaterApp::~CDStarRepeaterApp()
-{
-}
-
-bool CDStarRepeaterApp::OnInit()
-{
-	SetVendorName(VENDOR_NAME);
-
-	if (!wxApp::OnInit())
-		return false;
-
-	if (!m_nolog) {
-		wxString logBaseName = LOG_BASE_NAME;
-		if (!m_name.IsEmpty()) {
-			logBaseName.Append("_");
-			logBaseName.Append(m_name);
-		}
-
-#if defined(__WINDOWS__)
-		if (m_logDir.IsEmpty())
-			m_logDir = ::wxGetHomeDir();
-#else
-		if (m_logDir.IsEmpty())
-			m_logDir = LOG_DIR;
-#endif
-
-		try {
-			CLogger* log = new CLogger(m_logDir, logBaseName);
-			wxLog::SetActiveTarget(log);
-		} catch ( const std::runtime_error& e ) {
-			wxLog::SetActiveTarget(new wxLogStderr());
-			wxLogError("Could not open log file, logging to stderr");
-		}
-	} else {
-		new wxLogNull;
-	}
-
-	m_logChain = new wxLogChain(new CDStarRepeaterLogRedirect);
-
-	wxString appName;
-	if (!m_name.IsEmpty())
-		appName = APPLICATION_NAME + " " + m_name;
-	else
-		appName = APPLICATION_NAME;
-
-#if !defined(__WINDOWS__)
-	appName.Replace(" ", "_");
-	m_checker = new wxSingleInstanceChecker(appName, "/tmp");
-#else
-	m_checker = new wxSingleInstanceChecker(appName);
-#endif
-
-	bool ret = m_checker->IsAnotherRunning();
-	if (ret) {
-		wxLogError("Another copy of the D-Star Repeater is running, exiting");
-		return false;
-	}
-
-#if defined(__WINDOWS__)
-	if (m_confDir.IsEmpty())
-		m_confDir = ::wxGetHomeDir();
-
-	m_config = new CDStarRepeaterConfig(new wxConfig(APPLICATION_NAME), m_confDir, CONFIG_FILE_NAME, m_name);
-#else
-	if (m_confDir.IsEmpty())
-		m_confDir = CONF_DIR;
-
-	try {
-		m_config = new CDStarRepeaterConfig(m_confDir, CONFIG_FILE_NAME, m_name, true);
-	} catch( std::runtime_error& e ) {
-		wxLogError("Could not open configuration file");
-		return false;
-	}
-#endif
-
-	wxString type;
-	m_config->getModem(type);
-
-#if (wxUSE_GUI == 1)
-	wxString frameName = APPLICATION_NAME + " (" + type + ") - ";
-	if (!m_name.IsEmpty()) {
-		frameName.Append(m_name);
-		frameName.Append(" - ");
-	}
-	frameName.Append(VERSION);
-
-	wxPoint position = wxDefaultPosition;
-
-	int x, y;
-	m_config->getPosition(x, y);
-	if (x >= 0 && y >= 0)
-		position = wxPoint(x, y);
-
-	m_frame = new CDStarRepeaterFrame(frameName, type, position, m_gui);
-	m_frame->Show();
-
-	SetTopWindow(m_frame);
-#endif
-
-	wxLogInfo("Starting " + APPLICATION_NAME + " - " + VERSION);
-
-	// Log the version of wxWidgets and the Operating System
-	wxLogInfo("Using wxWidgets %d.%d.%d on %s", wxMAJOR_VERSION, wxMINOR_VERSION, wxRELEASE_NUMBER, ::wxGetOsDescription().c_str());
-
-#if defined(MQTT)
-	wxString mqttHost, mqttUsername, mqttPassword, mqttName;
-	unsigned int mqttPort, mqttKeepalive;
-	bool mqttAuth;
-	m_config->getMQTT(mqttHost, mqttPort, mqttAuth, mqttUsername, mqttPassword, mqttKeepalive, mqttName);
-
-	if (!mqttHost.IsEmpty()) {
-		std::vector<std::pair<std::string, void (*)(const unsigned char*, unsigned int)>> subscriptions;
-
-		g_mqtt = new CMQTTConnection(
-			std::string(mqttHost.mb_str()),
-			(unsigned short)mqttPort,
-			std::string(mqttName.mb_str()),
-			mqttAuth,
-			std::string(mqttUsername.mb_str()),
-			std::string(mqttPassword.mb_str()),
-			subscriptions,
-			mqttKeepalive
-		);
-
-		bool ret = g_mqtt->open();
-		if (!ret) {
-			wxLogError("Unable to start MQTT connection to %s:%u", mqttHost.c_str(), mqttPort);
-			delete g_mqtt;
-			g_mqtt = NULL;
-		} else {
-			wxLogInfo("MQTT connected to %s:%u as %s", mqttHost.c_str(), mqttPort, mqttName.c_str());
-		}
-	}
-#endif
-
-	createThread();
-
-	return true;
-}
-
-int CDStarRepeaterApp::OnExit()
-{
-	wxLogInfo(APPLICATION_NAME + " is exiting");
-
-	m_logChain->SetLog(NULL);
-
-	m_thread->kill();
-	m_thread->Wait();
-
-#if defined(MQTT)
-	if (g_mqtt != NULL) {
-		g_mqtt->close();
-		delete g_mqtt;
-		g_mqtt = NULL;
-	}
-#endif
-
-	delete m_config;
-
-	delete m_checker;
-
-	return 0;
-}
-
-void CDStarRepeaterApp::OnInitCmdLine(wxCmdLineParser& parser)
-{
-	parser.AddSwitch(NOLOGGING_SWITCH, wxEmptyString, wxEmptyString, wxCMD_LINE_PARAM_OPTIONAL);
-	parser.AddSwitch(GUI_SWITCH,       wxEmptyString, wxEmptyString, wxCMD_LINE_PARAM_OPTIONAL);
-	parser.AddOption(LOGDIR_OPTION,    wxEmptyString, wxEmptyString, wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL);
-	parser.AddOption(CONFDIR_OPTION,   wxEmptyString, wxEmptyString, wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL);
-	parser.AddOption(AUDIODIR_OPTION,  wxEmptyString, wxEmptyString, wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL);
-	parser.AddParam(NAME_PARAM, wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL);
-
-	wxApp::OnInitCmdLine(parser);
-}
-
-bool CDStarRepeaterApp::OnCmdLineParsed(wxCmdLineParser& parser)
-{
-	if (!wxApp::OnCmdLineParsed(parser))
-		return false;
-
-	m_nolog = parser.Found(NOLOGGING_SWITCH);
-	m_gui   = parser.Found(GUI_SWITCH);
-
-	wxString logDir;
-	bool found = parser.Found(LOGDIR_OPTION, &logDir);
-	if (found)
-		m_logDir = logDir;
-
-	wxString confDir;
-	found = parser.Found(CONFDIR_OPTION, &confDir);
-	if (found)
-		m_confDir = confDir;
-
-	wxString audioDir;
-	found = parser.Found(AUDIODIR_OPTION, &audioDir);
-	if (found)
-		m_audioDir = audioDir;
-	else
-// XXX  Homedir here isn't appropriate.  I don't know if logDir is either.
-// XXX  Need to look at more code
-#if defined(__WINDOWS__)
-		m_audioDir = ::wxGetHomeDir();
-#else
-		m_audioDir = logDir;
-#endif
-
-	if (parser.GetParamCount() > 0U)
-		m_name = parser.GetParam(0U);
-
-	return true;
-}
-
-#if defined(__WXDEBUG__)
-void CDStarRepeaterApp::OnAssertFailure(const wxChar* file, int line, const wxChar* func, const wxChar* cond, const wxChar* msg)
-{
-	wxLogFatalError("Assertion failed on line %d in file %s and function %s: %s %s", line, file, func, cond, msg);
+	g_running = 0;
 }
 #endif
 
-CDStarRepeaterStatusData* CDStarRepeaterApp::getStatus() const
+// ---------------------------------------------------------------------------
+// createThread -- builds and launches the repeater thread
+// ---------------------------------------------------------------------------
+
+IDStarRepeaterThread* createThread(CDStarRepeaterConfig* config,
+                                   const std::string&    audioDir,
+                                   std::string           commandLine[6])
 {
-	return m_thread->getStatus();
-}
+	assert(config != nullptr);
 
-void CDStarRepeaterApp::showLog(const wxString& text)
-{
-#if (wxUSE_GUI == 1)
-	if(m_frame)
-		m_frame->showLog(text);
-#endif
-}
+	std::string callsign, gateway;
+	DSTAR_MODE  mode;
+	ACK_TYPE    ack;
+	bool        restriction, rpt1Validation, dtmfBlanking, errorReply;
+	config->getCallsign(callsign, gateway, mode, ack, restriction, rpt1Validation, dtmfBlanking, errorReply);
 
-void CDStarRepeaterApp::setOutputs(bool out1, bool out2, bool out3, bool out4)
-{
-	wxLogInfo("Output 1 = %d, output 2 = %d, output 3 = %d, output 4 = %d", int(out1), int(out2), int(out3), int(out4));
+	std::string modemType;
+	config->getModem(modemType);
 
-	m_thread->setOutputs(out1, out2, out3, out4);
-}
-
-void CDStarRepeaterApp::setLogging(bool logging)
-{
-	wxLogInfo("Frame logging set to %d, in %s", int(logging), m_audioDir.c_str());
-
-	m_thread->setLogging(logging, m_audioDir);
-}
-
-void CDStarRepeaterApp::setPosition(int x, int y)
-{
-	m_config->setPosition(x, y);
-	m_config->write();
-}
-
-void CDStarRepeaterApp::OnRemoteCmd(wxThreadEvent& event)
-{
-	wxLogMessage("Request to execute command %s (%d)", m_commandLine[event.GetInt()], event.GetInt());
-	// XXX sanity check the command line here.
-	wxShell(m_commandLine[event.GetInt()]);
-}
-
-void CDStarRepeaterApp::startup()
-{
-	m_thread->startup();
-}
-
-void CDStarRepeaterApp::shutdown()
-{
-	m_thread->shutdown();
-}
-
-void CDStarRepeaterApp::createThread()
-{
-	wxASSERT(m_config != NULL);
-
-	wxString callsign, gateway;
-	DSTAR_MODE mode;
-	ACK_TYPE ack;
-	bool restriction, rpt1Validation, dtmfBlanking, errorReply;
-	m_config->getCallsign(callsign, gateway, mode, ack, restriction, rpt1Validation, dtmfBlanking, errorReply);
-
-	wxString modemType;
-	m_config->getModem(modemType);
-
-	// DVAP can only do simplex, force the mode accordingly
-	if (modemType.IsSameAs("DVAP") || modemType.IsSameAs(wxT("Icom Access Point/Terminal Mode"))) {
+	// DVAP and Icom terminal mode can only do simplex -- adjust accordingly
+	if (modemType == "DVAP" || modemType == "Icom Access Point/Terminal Mode") {
 		if (mode == MODE_DUPLEX) {
 			wxLogInfo("Changing mode from DUPLEX to SIMPLEX");
 			mode = MODE_SIMPLEX;
@@ -388,218 +123,261 @@ void CDStarRepeaterApp::createThread()
 		}
 	}
 
-	//  XXX This should be m_thread eventually.
+	IDStarRepeaterThread* thread = nullptr;
 	switch (mode) {
 		case MODE_RXONLY:
-			m_thread = new CDStarRepeaterRXThread(modemType);
+			thread = new CDStarRepeaterRXThread(modemType);
 			break;
 		case MODE_TXONLY:
-			m_thread = new CDStarRepeaterTXThread(modemType);
+			thread = new CDStarRepeaterTXThread(modemType);
 			break;
 		case MODE_TXANDRX:
-			m_thread = new CDStarRepeaterTXRXThread(modemType);
+			thread = new CDStarRepeaterTXRXThread(modemType);
 			break;
 		default:
-			m_thread = new CDStarRepeaterTRXThread(modemType);
+			thread = new CDStarRepeaterTRXThread(modemType);
 			break;
 	}
 
-	m_thread->setCallsign(callsign, gateway, mode, ack, restriction, rpt1Validation, dtmfBlanking, errorReply);
-	wxLogInfo("Callsign set to \"%s\", gateway set to \"%s\", mode: %d, ack: %d, restriction: %d, RPT1 validation: %d, DTMF blanking: %d, Error reply: %d", callsign.c_str(), gateway.c_str(), int(mode), int(ack), int(restriction), int(rpt1Validation), int(dtmfBlanking), int(errorReply));
+	thread->setCallsign(callsign, gateway, mode, ack, restriction, rpt1Validation, dtmfBlanking, errorReply);
+	wxLogInfo("Callsign set to \"%s\", gateway set to \"%s\", mode: %d, ack: %d, restriction: %d, RPT1 validation: %d, DTMF blanking: %d, Error reply: %d",
+		callsign.c_str(), gateway.c_str(), int(mode), int(ack), int(restriction), int(rpt1Validation), int(dtmfBlanking), int(errorReply));
 
-	wxString gatewayAddress, localAddress, name;
+	std::string gatewayAddress, localAddress, netName;
 	unsigned int gatewayPort, localPort;
-	m_config->getNetwork(gatewayAddress, gatewayPort, localAddress, localPort, name);
-	wxLogInfo("Gateway set to %s:%u, local set to %s:%u, name set to \"%s\"", gatewayAddress.c_str(), gatewayPort, localAddress.c_str(), localPort, name.c_str());
+	config->getNetwork(gatewayAddress, gatewayPort, localAddress, localPort, netName);
+	wxLogInfo("Gateway set to %s:%u, local set to %s:%u, name set to \"%s\"",
+		gatewayAddress.c_str(), gatewayPort, localAddress.c_str(), localPort, netName.c_str());
 
-	if (!gatewayAddress.IsEmpty()) {
-		bool local = gatewayAddress.IsSameAs("127.0.0.1");
+	if (!gatewayAddress.empty()) {
+		bool local = (gatewayAddress == "127.0.0.1");
 
-		CRepeaterProtocolHandler* handler = new CRepeaterProtocolHandler(gatewayAddress, gatewayPort, localAddress, localPort, name);
+		CRepeaterProtocolHandler* handler = new CRepeaterProtocolHandler(
+			gatewayAddress, gatewayPort, localAddress, localPort, netName);
 
 		bool res = handler->open();
-		if (!res)
+		if (!res) {
 			wxLogError("Cannot open the protocol handler");
-		else
-			m_thread->setProtocolHandler(handler, local);
+			delete handler;
+		} else {
+			thread->setProtocolHandler(handler, local);
+		}
 	}
 
 	unsigned int timeout, ackTime;
-	m_config->getTimes(timeout, ackTime);
-	m_thread->setTimes(timeout, ackTime);
+	config->getTimes(timeout, ackTime);
+	thread->setTimes(timeout, ackTime);
 	wxLogInfo("Timeout set to %u secs, ack time set to %u ms", timeout, ackTime);
 
 	unsigned int beaconTime;
-	wxString beaconText;
-	bool beaconVoice;
-	TEXT_LANG language;
-	m_config->getBeacon(beaconTime, beaconText, beaconVoice, language);
+	std::string  beaconText;
+	bool         beaconVoice;
+	TEXT_LANG    language;
+	config->getBeacon(beaconTime, beaconText, beaconVoice, language);
 	if (mode == MODE_GATEWAY)
 		beaconTime = 0U;
-	m_thread->setBeacon(beaconTime, beaconText, beaconVoice, language);
-	wxLogInfo("Beacon set to %u mins, text set to \"%s\", voice set to %d, language set to %d", beaconTime / 60U, beaconText.c_str(), int(beaconVoice), int(language));
+	thread->setBeacon(beaconTime, beaconText, beaconVoice, language);
+	wxLogInfo("Beacon set to %u mins, text set to \"%s\", voice set to %d, language set to %d",
+		beaconTime / 60U, beaconText.c_str(), int(beaconVoice), int(language));
 
-	bool announcementEnabled;
+	bool         announcementEnabled;
 	unsigned int announcementTime;
-	wxString announcementRecordRPT1, announcementRecordRPT2;
-	wxString announcementDeleteRPT1, announcementDeleteRPT2;
-	m_config->getAnnouncement(announcementEnabled, announcementTime, announcementRecordRPT1, announcementRecordRPT2, announcementDeleteRPT1, announcementDeleteRPT2);
+	std::string  announcementRecordRPT1, announcementRecordRPT2;
+	std::string  announcementDeleteRPT1, announcementDeleteRPT2;
+	config->getAnnouncement(announcementEnabled, announcementTime,
+		announcementRecordRPT1, announcementRecordRPT2,
+		announcementDeleteRPT1, announcementDeleteRPT2);
 	if (mode == MODE_GATEWAY)
 		announcementEnabled = false;
-	m_thread->setAnnouncement(announcementEnabled, announcementTime, announcementRecordRPT1, announcementRecordRPT2, announcementDeleteRPT1, announcementDeleteRPT2);
-	wxLogInfo("Announcement enabled: %d, time: %u mins, record RPT1: \"%s\", record RPT2: \"%s\", delete RPT1: \"%s\", delete RPT2: \"%s\"", int(announcementEnabled), announcementTime / 60U, announcementRecordRPT1.c_str(), announcementRecordRPT2.c_str(), announcementDeleteRPT1.c_str(), announcementDeleteRPT2.c_str());
+	thread->setAnnouncement(announcementEnabled, announcementTime,
+		announcementRecordRPT1, announcementRecordRPT2,
+		announcementDeleteRPT1, announcementDeleteRPT2);
+	wxLogInfo("Announcement enabled: %d, time: %u mins, record RPT1: \"%s\", record RPT2: \"%s\", delete RPT1: \"%s\", delete RPT2: \"%s\"",
+		int(announcementEnabled), announcementTime / 60U,
+		announcementRecordRPT1.c_str(), announcementRecordRPT2.c_str(),
+		announcementDeleteRPT1.c_str(), announcementDeleteRPT2.c_str());
 
 	wxLogInfo("Modem type set to \"%s\"", modemType.c_str());
 
-	CModem* modem = NULL;
-	if (modemType.IsSameAs("DVAP")) {
-		wxString port;
+	CModem* modem = nullptr;
+
+	if (modemType == "DVAP") {
+		std::string  port;
 		unsigned int frequency;
-		int power, squelch;
-		m_config->getDVAP(port, frequency, power, squelch);
-		wxLogInfo("DVAP: port: %s, frequency: %u Hz, power: %d dBm, squelch: %d dBm", port.c_str(), frequency, power, squelch);
+		int          power, squelch;
+		config->getDVAP(port, frequency, power, squelch);
+		wxLogInfo("DVAP: port: %s, frequency: %u Hz, power: %d dBm, squelch: %d dBm",
+			port.c_str(), frequency, power, squelch);
 		modem = new CDVAPController(port, frequency, power, squelch);
-	} else if (modemType.IsSameAs("DV-RPTR V1")) {
-		wxString port;
-		bool rxInvert, txInvert, channel;
+
+	} else if (modemType == "DV-RPTR V1") {
+		std::string  port;
+		bool         rxInvert, txInvert, channel;
 		unsigned int modLevel, txDelay;
-		m_config->getDVRPTR1(port, rxInvert, txInvert, channel, modLevel, txDelay);
-		wxLogInfo("DV-RPTR V1, port: %s, RX invert: %d, TX invert: %d, channel: %s, mod level: %u%%, TX delay: %u ms", port.c_str(), int(rxInvert), int(txInvert), channel ? "B" : "A", modLevel, txDelay);
-		modem = new CDVRPTRV1Controller(port, wxEmptyString, rxInvert, txInvert, channel, modLevel, txDelay);
-	} else if (modemType.IsSameAs("DV-RPTR V2")) {
+		config->getDVRPTR1(port, rxInvert, txInvert, channel, modLevel, txDelay);
+		wxLogInfo("DV-RPTR V1, port: %s, RX invert: %d, TX invert: %d, channel: %s, mod level: %u%%, TX delay: %u ms",
+			port.c_str(), int(rxInvert), int(txInvert), channel ? "B" : "A", modLevel, txDelay);
+		modem = new CDVRPTRV1Controller(port, std::string(), rxInvert, txInvert, channel, modLevel, txDelay);
+
+	} else if (modemType == "DV-RPTR V2") {
 		CONNECTION_TYPE connType;
-		wxString usbPort, address;
-		bool txInvert;
-		unsigned int port, modLevel, txDelay;
-		m_config->getDVRPTR2(connType, usbPort, address, port, txInvert, modLevel, txDelay);
-		wxLogInfo("DV-RPTR V2, type: %d, address: %s:%u, TX invert: %d, mod level: %u%%, TX delay: %u ms", int(connType), address.c_str(), port, int(txInvert), modLevel, txDelay);
+		std::string     usbPort, address;
+		bool            txInvert;
+		unsigned int    port, modLevel, txDelay;
+		config->getDVRPTR2(connType, usbPort, address, port, txInvert, modLevel, txDelay);
+		wxLogInfo("DV-RPTR V2, type: %d, address: %s:%u, TX invert: %d, mod level: %u%%, TX delay: %u ms",
+			int(connType), address.c_str(), port, int(txInvert), modLevel, txDelay);
+		bool duplex = (mode == MODE_DUPLEX || mode == MODE_TXANDRX);
 		switch (connType) {
 			case CT_USB:
-				modem = new CDVRPTRV2Controller(usbPort, wxEmptyString, txInvert, modLevel, mode == MODE_DUPLEX || mode == MODE_TXANDRX, callsign, txDelay);
+				modem = new CDVRPTRV2Controller(usbPort, std::string(), txInvert, modLevel, duplex, callsign, txDelay);
 				break;
 			case CT_NETWORK:
-				modem = new CDVRPTRV2Controller(address, port, txInvert, modLevel, mode == MODE_DUPLEX || mode == MODE_TXANDRX, callsign, txDelay);
+				modem = new CDVRPTRV2Controller(address, port, txInvert, modLevel, duplex, callsign, txDelay);
 				break;
 		}
-	} else if (modemType.IsSameAs("DV-RPTR V3")) {
+
+	} else if (modemType == "DV-RPTR V3") {
 		CONNECTION_TYPE connType;
-		wxString usbPort, address;
-		bool txInvert;
-		unsigned int port, modLevel, txDelay;
-		m_config->getDVRPTR3(connType, usbPort, address, port, txInvert, modLevel, txDelay);
-		wxLogInfo("DV-RPTR V3, type: %d, address: %s:%u, TX invert: %d, mod level: %u%%, TX delay: %u ms", int(connType), address.c_str(), port, int(txInvert), modLevel, txDelay);
+		std::string     usbPort, address;
+		bool            txInvert;
+		unsigned int    port, modLevel, txDelay;
+		config->getDVRPTR3(connType, usbPort, address, port, txInvert, modLevel, txDelay);
+		wxLogInfo("DV-RPTR V3, type: %d, address: %s:%u, TX invert: %d, mod level: %u%%, TX delay: %u ms",
+			int(connType), address.c_str(), port, int(txInvert), modLevel, txDelay);
+		bool duplex = (mode == MODE_DUPLEX || mode == MODE_TXANDRX);
 		switch (connType) {
 			case CT_USB:
-				modem = new CDVRPTRV3Controller(usbPort, wxEmptyString, txInvert, modLevel, mode == MODE_DUPLEX || mode == MODE_TXANDRX, callsign, txDelay);
+				modem = new CDVRPTRV3Controller(usbPort, std::string(), txInvert, modLevel, duplex, callsign, txDelay);
 				break;
 			case CT_NETWORK:
-				modem = new CDVRPTRV3Controller(address, port, txInvert, modLevel, mode == MODE_DUPLEX || mode == MODE_TXANDRX, callsign, txDelay);
+				modem = new CDVRPTRV3Controller(address, port, txInvert, modLevel, duplex, callsign, txDelay);
 				break;
 		}
-	} else if (modemType.IsSameAs("DVMEGA")) {
-		wxString port;
+
+	} else if (modemType == "DVMEGA") {
+		std::string    port;
 		DVMEGA_VARIANT variant;
-		bool rxInvert, txInvert;
-		unsigned int txDelay, rxFrequency, txFrequency, power;
-		m_config->getDVMEGA(port, variant, rxInvert, txInvert, txDelay, rxFrequency, txFrequency, power);
-		wxLogInfo("DVMEGA, port: %s, variant: %d, RX invert: %d, TX invert: %d, TX delay: %u ms, rx frequency: %u Hz, tx frequency: %u Hz, power: %u %%", port.c_str(), int(variant), int(rxInvert), int(txInvert), txDelay, rxFrequency, txFrequency, power);
+		bool           rxInvert, txInvert;
+		unsigned int   txDelay, rxFrequency, txFrequency, power;
+		config->getDVMEGA(port, variant, rxInvert, txInvert, txDelay, rxFrequency, txFrequency, power);
+		wxLogInfo("DVMEGA, port: %s, variant: %d, RX invert: %d, TX invert: %d, TX delay: %u ms, rx frequency: %u Hz, tx frequency: %u Hz, power: %u %%",
+			port.c_str(), int(variant), int(rxInvert), int(txInvert), txDelay, rxFrequency, txFrequency, power);
 		switch (variant) {
 			case DVMV_MODEM:
-				modem = new CDVMegaController(port, wxEmptyString, rxInvert, txInvert, txDelay);
+				modem = new CDVMegaController(port, std::string(), rxInvert, txInvert, txDelay);
 				break;
 			case DVMV_RADIO_2M:
 			case DVMV_RADIO_70CM:
 			case DVMV_RADIO_2M_70CM:
-				modem = new CDVMegaController(port, wxEmptyString, txDelay, rxFrequency, txFrequency, power);
+				modem = new CDVMegaController(port, std::string(), txDelay, rxFrequency, txFrequency, power);
 				break;
 			default:
 				wxLogError("Unknown DVMEGA variant - %d", int(variant));
 				break;
 		}
-	} else if (modemType.IsSameAs("GMSK Modem")) {
+
+	} else if (modemType == "GMSK Modem") {
 		USB_INTERFACE iface;
-		unsigned int address;
-		m_config->getGMSK(iface, address);
+		unsigned int  address;
+		config->getGMSK(iface, address);
 		wxLogInfo("GMSK, interface: %d, address: %04X", int(iface), address);
 		modem = new CGMSKController(iface, address, mode == MODE_DUPLEX || mode == MODE_TXANDRX);
-	} else if (modemType.IsSameAs("Sound Card")) {
-		wxString rxDevice, txDevice;
-		bool rxInvert, txInvert;
-		wxFloat32 rxLevel, txLevel;
+
+	} else if (modemType == "Sound Card") {
+		std::string rxDevice, txDevice;
+		bool        rxInvert, txInvert;
+		float       rxLevel, txLevel;
 		unsigned int txDelay, txTail;
-		m_config->getSoundCard(rxDevice, txDevice, rxInvert, txInvert, rxLevel, txLevel, txDelay, txTail);
-		wxLogInfo("Sound Card, devices: %s:%s, invert: %d:%d, levels: %.2f:%.2f, tx delay: %u ms, tx tail: %u ms", rxDevice.c_str(), txDevice.c_str(), int(rxInvert), int(txInvert), rxLevel, txLevel, txDelay, txTail);
+		config->getSoundCard(rxDevice, txDevice, rxInvert, txInvert, rxLevel, txLevel, txDelay, txTail);
+		wxLogInfo("Sound Card, devices: %s:%s, invert: %d:%d, levels: %.2f:%.2f, tx delay: %u ms, tx tail: %u ms",
+			rxDevice.c_str(), txDevice.c_str(), int(rxInvert), int(txInvert), rxLevel, txLevel, txDelay, txTail);
 		modem = new CSoundCardController(rxDevice, txDevice, rxInvert, txInvert, rxLevel, txLevel, txDelay, txTail);
-	} else if (modemType.IsSameAs("MMDVM")) {
-		wxString port;
-		bool rxInvert, txInvert, pttInvert;
+
+	} else if (modemType == "MMDVM") {
+		std::string  port;
+		bool         rxInvert, txInvert, pttInvert;
 		unsigned int txDelay, rxLevel, txLevel;
-		m_config->getMMDVM(port, rxInvert, txInvert, pttInvert, txDelay, rxLevel, txLevel);
-		wxLogInfo("MMDVM, port: %s, RX invert: %d, TX invert: %d, PTT invert: %d, TX delay: %u ms, RX level: %u%%, TX level: %u%%", port.c_str(), int(rxInvert), int(txInvert), int(pttInvert), txDelay, rxLevel, txLevel);
-		modem = new CMMDVMController(port, wxEmptyString, rxInvert, txInvert, pttInvert, txDelay, rxLevel, txLevel);
-	} else if (modemType.IsSameAs("Split")) {
-		wxString localAddress;
-		unsigned int localPort;
-		wxArrayString transmitterNames, receiverNames;
-		unsigned int timeout;
-		m_config->getSplit(localAddress, localPort, transmitterNames, receiverNames, timeout);
-		wxLogInfo("Split, local: %s:%u, timeout: %u ms", localAddress.c_str(), localPort, timeout);
-		for (unsigned int i = 0U; i < transmitterNames.GetCount(); i++) {
-			wxString name = transmitterNames.Item(i);
-			if (!name.IsEmpty()) {
-				wxLogInfo("\tTX %u name: %s", i + 1U, name.c_str());
-			}
+		config->getMMDVM(port, rxInvert, txInvert, pttInvert, txDelay, rxLevel, txLevel);
+		wxLogInfo("MMDVM, port: %s, RX invert: %d, TX invert: %d, PTT invert: %d, TX delay: %u ms, RX level: %u%%, TX level: %u%%",
+			port.c_str(), int(rxInvert), int(txInvert), int(pttInvert), txDelay, rxLevel, txLevel);
+		modem = new CMMDVMController(port, std::string(), rxInvert, txInvert, pttInvert, txDelay, rxLevel, txLevel);
+
+	} else if (modemType == "Split") {
+		std::string              localAddr;
+		unsigned int             localP;
+		std::vector<std::string> transmitterNames, receiverNames;
+		unsigned int             splitTimeout;
+		config->getSplit(localAddr, localP, transmitterNames, receiverNames, splitTimeout);
+		wxLogInfo("Split, local: %s:%u, timeout: %u ms", localAddr.c_str(), localP, splitTimeout);
+		for (unsigned int i = 0U; i < transmitterNames.size(); i++) {
+			if (!transmitterNames[i].empty())
+				wxLogInfo("\tTX %u name: %s", i + 1U, transmitterNames[i].c_str());
 		}
-		for (unsigned int i = 0U; i < receiverNames.GetCount(); i++) {
-			wxString name = receiverNames.Item(i);
-			if (!name.IsEmpty()) {
-				wxLogInfo("\tRX %u name: %s", i + 1U, name.c_str());
-			}
+		for (unsigned int i = 0U; i < receiverNames.size(); i++) {
+			if (!receiverNames[i].empty())
+				wxLogInfo("\tRX %u name: %s", i + 1U, receiverNames[i].c_str());
 		}
-		modem = new CSplitController(localAddress, localPort, transmitterNames, receiverNames, timeout);
-	} else if (modemType.IsSameAs("Icom Access Point/Terminal Mode")) {
-		wxString port;
-		m_config->getIcom(port);
+		modem = new CSplitController(localAddr, localP, transmitterNames, receiverNames, splitTimeout);
+
+	} else if (modemType == "Icom Access Point/Terminal Mode") {
+		std::string port;
+		config->getIcom(port);
 		wxLogInfo("Icom, port: %s", port.c_str());
 		modem = new CIcomController(port);
+
 	} else {
 		wxLogError("Unknown modem type: %s", modemType.c_str());
 	}
 
-	if (modem != NULL) {
+	if (modem != nullptr) {
 		bool res = modem->start();
-		if (!res)
+		if (!res) {
 			wxLogError("Cannot open the D-Star modem");
-		else
-			m_thread->setModem(modem);
+			delete modem;
+		} else {
+			thread->setModem(modem);
+		}
 	}
 
-	wxString controllerType;
+	std::string  controllerType;
 	unsigned int portConfig, activeHangTime;
-	bool pttInvert;
-	m_config->getController(controllerType, portConfig, pttInvert, activeHangTime);
-	wxLogInfo("Controller set to %s, config: %u, PTT invert: %d, active hang time: %u ms", controllerType.c_str(), portConfig, int(pttInvert), activeHangTime);
+	bool         pttInvert;
+	config->getController(controllerType, portConfig, pttInvert, activeHangTime);
+	wxLogInfo("Controller set to %s, config: %u, PTT invert: %d, active hang time: %u ms",
+		controllerType.c_str(), portConfig, int(pttInvert), activeHangTime);
 
-	CExternalController* controller = NULL;
+	CExternalController* controller = nullptr;
 
-	wxString port;
-	if (controllerType.StartsWith("Velleman K8055 - ", &port)) {
-		unsigned long num;
-		port.ToULong(&num);
+	const std::string PREFIX_K8055   = "Velleman K8055 - ";
+	const std::string PREFIX_URIUSB  = "URI USB - ";
+	const std::string PREFIX_SERIAL  = "Serial - ";
+	const std::string PREFIX_ARDUINO = "Arduino - ";
+
+	auto startsWith = [](const std::string& s, const std::string& prefix, std::string& rest) -> bool {
+		if (s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0) {
+			rest = s.substr(prefix.size());
+			return true;
+		}
+		return false;
+	};
+
+	std::string portStr;
+	if (startsWith(controllerType, PREFIX_K8055, portStr)) {
+		unsigned long num = std::stoul(portStr);
 		controller = new CExternalController(new CK8055Controller(num), pttInvert);
-	} else if (controllerType.StartsWith("URI USB - ", &port)) {
-                unsigned long num;
-                port.ToULong(&num);
-                controller = new CExternalController(new CURIUSBController(num, true), pttInvert);
-	} else if (controllerType.StartsWith("Serial - ", &port)) {
-		controller = new CExternalController(new CSerialLineController(port, portConfig), pttInvert);
-	} else if (controllerType.StartsWith("Arduino - ", &port)) {
-		controller = new CExternalController(new CArduinoController(port), pttInvert);
+	} else if (startsWith(controllerType, PREFIX_URIUSB, portStr)) {
+		unsigned long num = std::stoul(portStr);
+		controller = new CExternalController(new CURIUSBController(num, true), pttInvert);
+	} else if (startsWith(controllerType, PREFIX_SERIAL, portStr)) {
+		controller = new CExternalController(new CSerialLineController(portStr, portConfig), pttInvert);
+	} else if (startsWith(controllerType, PREFIX_ARDUINO, portStr)) {
+		controller = new CExternalController(new CArduinoController(portStr), pttInvert);
 #if defined(GPIO)
-	} else if (controllerType.IsSameAs("GPIO")) {
+	} else if (controllerType == "GPIO") {
 		controller = new CExternalController(new CGPIOController(portConfig), pttInvert);
-	} else if (controllerType.IsSameAs(wxT("UDRC"))) {
-		switch(portConfig) {
+	} else if (controllerType == "UDRC") {
+		switch (portConfig) {
 			case 1:
 				controller = new CUDRCController(AUTO_FM);
 				break;
@@ -616,129 +394,368 @@ void CDStarRepeaterApp::createThread()
 			case 2:
 				controller = new CUDRCController(AUTO_AUTO);
 				break;
-
-			}
+		}
 #endif
 	} else {
-		wxLogError("Unrecognized controller %s, using dummy controller", controllerType);
+		wxLogError("Unrecognized controller %s, using dummy controller", controllerType.c_str());
 		controller = new CExternalController(new CDummyController, pttInvert);
 	}
 
 	bool res = controller->open();
-	if (!res)
+	if (!res) {
 		wxLogError("Cannot open the hardware interface - %s", controllerType.c_str());
-	else
-		m_thread->setController(controller, activeHangTime);
+		delete controller;
+	} else {
+		thread->setController(controller, activeHangTime);
+	}
 
 	bool out1, out2, out3, out4;
-	m_config->getOutputs(out1, out2, out3, out4);
-	m_thread->setOutputs(out1, out2, out3, out4);
-#if (wxUSE_GUI == 1)
-	m_frame->setOutputs(out1, out2, out3, out4);
-#endif
-	wxLogInfo("Output 1 = %d, output 2 = %d, output 3 = %d, output 4 = %d", int(out1), int(out2), int(out3), int(out4));
+	config->getOutputs(out1, out2, out3, out4);
+	thread->setOutputs(out1, out2, out3, out4);
+	wxLogInfo("Output 1 = %d, output 2 = %d, output 3 = %d, output 4 = %d",
+		int(out1), int(out2), int(out3), int(out4));
 
-	bool enabled;
-	wxString rpt1Callsign, rpt2Callsign;
-	wxString shutdown, startup;
+	bool        controlEnabled;
+	std::string rpt1Callsign, rpt2Callsign, ctrlShutdown, ctrlStartup;
+	std::vector<std::string> status(5);
+	std::vector<std::string> command(6);
+	std::vector<std::string> output(4);
 
-	//  XXX Initialization should be temporary until we get them coming
-	//  from m_config->getControl
-	wxArrayString status;
-	status.Add("", 5);
-	wxArrayString command;
-	command.Add("", 6);
-	wxArrayString output;
-	output.Add("", 4);
+	config->getControl(controlEnabled, rpt1Callsign, rpt2Callsign, ctrlShutdown, ctrlStartup,
+		status[0], status[1], status[2], status[3], status[4],
+		command[0], commandLine[0],
+		command[1], commandLine[1],
+		command[2], commandLine[2],
+		command[3], commandLine[3],
+		command[4], commandLine[4],
+		command[5], commandLine[5],
+		output[0], output[1], output[2], output[3]);
 
-	m_config->getControl(enabled, rpt1Callsign, rpt2Callsign, shutdown, startup, status[0], status[1], status[2], status[3], status[4], command[0], m_commandLine[0], command[1], m_commandLine[1], command[2], m_commandLine[2], command[3], m_commandLine[3], command[4], m_commandLine[4], command[5], m_commandLine[5], output[0], output[1], output[2], output[3]);
+	std::vector<std::string> commandLineVec(commandLine, commandLine + 6);
+	thread->setControl(controlEnabled, rpt1Callsign, rpt2Callsign, ctrlShutdown,
+		ctrlStartup, command, commandLineVec, status, output);
 
-	m_thread->setControl(enabled, rpt1Callsign, rpt2Callsign, shutdown,
-		startup, command, status, output);
-
-	wxLogInfo(wxT("Control: enabled: %d, RPT1: %s, RPT2: %s, shutdown: %s, startup: %s, status1: %s, status2: %s, status3: %s, status4: %s, status5: %s, command1: %s = %s, command2: %s = %s, command3: %s = %s, command4: %s = %s, command5: %s = %s, command6: %s = %s, output1: %s, output2: %s, output3: %s, output4: %s"), enabled, rpt1Callsign.c_str(), rpt2Callsign.c_str(), shutdown.c_str(), startup.c_str(), status[0].c_str(), status[1].c_str(), status[2].c_str(), status[3].c_str(), status[4].c_str(), command[0].c_str(), m_commandLine[0].c_str(), command[1].c_str(), m_commandLine[1].c_str(), command[2].c_str(), m_commandLine[2].c_str(), command[3].c_str(), m_commandLine[3].c_str(), command[4].c_str(), m_commandLine[4].c_str(), command[5].c_str(), m_commandLine[5].c_str(), output[0].c_str(), output[1].c_str(), output[2].c_str(), output[3].c_str());
+	wxLogInfo("Control: enabled: %d, RPT1: %s, RPT2: %s, shutdown: %s, startup: %s, "
+		"status1: %s, status2: %s, status3: %s, status4: %s, status5: %s, "
+		"command1: %s = %s, command2: %s = %s, command3: %s = %s, "
+		"command4: %s = %s, command5: %s = %s, command6: %s = %s, "
+		"output1: %s, output2: %s, output3: %s, output4: %s",
+		int(controlEnabled),
+		rpt1Callsign.c_str(), rpt2Callsign.c_str(),
+		ctrlShutdown.c_str(), ctrlStartup.c_str(),
+		status[0].c_str(), status[1].c_str(), status[2].c_str(), status[3].c_str(), status[4].c_str(),
+		command[0].c_str(), commandLine[0].c_str(),
+		command[1].c_str(), commandLine[1].c_str(),
+		command[2].c_str(), commandLine[2].c_str(),
+		command[3].c_str(), commandLine[3].c_str(),
+		command[4].c_str(), commandLine[4].c_str(),
+		command[5].c_str(), commandLine[5].c_str(),
+		output[0].c_str(), output[1].c_str(), output[2].c_str(), output[3].c_str());
 
 	bool logging;
-	m_config->getLogging(logging);
-	m_thread->setLogging(logging, m_audioDir);
-#if (wxUSE_GUI == 1)
-	m_frame->setLogging(logging);
-#endif
-	wxLogInfo("Frame logging set to %d, in %s", int(logging), m_audioDir.c_str());
+	config->getLogging(logging);
+	thread->setLogging(logging, audioDir);
+	wxLogInfo("Frame logging set to %d, in %s", int(logging), audioDir.c_str());
 
-#if defined(__WINDOWS__)
-	wxFileName wlFilename(wxFileName::GetHomeDir(), PRIMARY_WHITELIST_FILE_NAME);
-#else
-	wxFileName wlFilename(CONF_DIR, PRIMARY_WHITELIST_FILE_NAME);
-#endif
-	bool exists = wlFilename.FileExists();
-
-	if (!exists) {
-#if defined(__WINDOWS__)
-		wlFilename.Assign(wxFileName::GetHomeDir(), SECONDARY_WHITELIST_FILE_NAME);
-#else
-		wlFilename.Assign(CONF_DIR, SECONDARY_WHITELIST_FILE_NAME);
-#endif
-		exists = wlFilename.FileExists();
-	}
-
-	if (exists) {
-		CCallsignList* list = new CCallsignList(wlFilename.GetFullPath());
-		bool res = list->load();
-		if (!res) {
-			wxLogError("Unable to open white list file - %s", wlFilename.GetFullPath().c_str());
-			delete list;
-		} else {
-			wxLogInfo("%u callsigns loaded into the white list", list->getCount());
-			m_thread->setWhiteList(list);
-		}
-	}
-#if defined(__WINDOWS__)
-	wxFileName blFilename(wxFileName::GetHomeDir(), PRIMARY_BLACKLIST_FILE_NAME);
-#else
-	wxFileName blFilename(CONF_DIR, PRIMARY_BLACKLIST_FILE_NAME);
-#endif
-	exists = blFilename.FileExists();
-
-	if (!exists) {
-#if defined(__WINDOWS__)
-		blFilename.Assign(wxFileName::GetHomeDir(), SECONDARY_BLACKLIST_FILE_NAME);
-#else
-		blFilename.Assign(CONF_DIR, SECONDARY_BLACKLIST_FILE_NAME);
-#endif
-		exists = blFilename.FileExists();
-	}
-
-	if (exists) {
-		CCallsignList* list = new CCallsignList(blFilename.GetFullPath());
-		bool res = list->load();
-		if (!res) {
-			wxLogError("Unable to open black list file - %s", blFilename.GetFullPath().c_str());
-			delete list;
-		} else {
-			wxLogInfo("%u callsigns loaded into the black list", list->getCount());
-			m_thread->setBlackList(list);
-		}
-	}
-#if defined(__WINDOWS__)
-	wxFileName glFilename(wxFileName::GetHomeDir(), GREYLIST_FILE_NAME);
-#else
-		wxFileName glFilename(CONF_DIR, GREYLIST_FILE_NAME);
-#endif
-	exists = glFilename.FileExists();
-	if (exists) {
-		CCallsignList* list = new CCallsignList(glFilename.GetFullPath());
-		bool res = list->load();
-		if (!res) {
-			wxLogError("Unable to open grey list file - %s", glFilename.GetFullPath().c_str());
-			delete list;
-		} else {
-			wxLogInfo("%u callsigns loaded into the grey list", list->getCount());
-			m_thread->setGreyList(list);
+	// White list
+	{
+		std::string wlFile;
+		config->getWhitelist(wlFile);
+		if (!wlFile.empty() && access(wlFile.c_str(), F_OK) == 0) {
+			CCallsignList* list = new CCallsignList(wlFile);
+			bool ok = list->load();
+			if (!ok) {
+				wxLogError("Unable to open white list file - %s", wlFile.c_str());
+				delete list;
+			} else {
+				wxLogInfo("%u callsigns loaded into the white list", list->getCount());
+				thread->setWhiteList(list);
+			}
 		}
 	}
 
-	m_thread->Create();
-	m_thread->SetPriority(wxPRIORITY_MAX);
-	m_thread->Run();
+	// Black list
+	{
+		std::string blFile;
+		config->getBlacklist(blFile);
+		if (!blFile.empty() && access(blFile.c_str(), F_OK) == 0) {
+			CCallsignList* list = new CCallsignList(blFile);
+			bool ok = list->load();
+			if (!ok) {
+				wxLogError("Unable to open black list file - %s", blFile.c_str());
+				delete list;
+			} else {
+				wxLogInfo("%u callsigns loaded into the black list", list->getCount());
+				thread->setBlackList(list);
+			}
+		}
+	}
+
+	// Grey list
+	{
+		std::string glFile;
+		config->getGreylist(glFile);
+		if (!glFile.empty() && access(glFile.c_str(), F_OK) == 0) {
+			CCallsignList* list = new CCallsignList(glFile);
+			bool ok = list->load();
+			if (!ok) {
+				wxLogError("Unable to open grey list file - %s", glFile.c_str());
+				delete list;
+			} else {
+				wxLogInfo("%u callsigns loaded into the grey list", list->getCount());
+				thread->setGreyList(list);
+			}
+		}
+	}
+
+	// Launch the repeater thread (virtual dispatch through lambda)
+	thread->m_thread = std::thread([thread]() { thread->entry(); });
+
+	return thread;
+}
+
+// ---------------------------------------------------------------------------
+// main
+// ---------------------------------------------------------------------------
+
+int main(int argc, char** argv)
+{
+	if (argc < 2) {
+		std::fprintf(stderr, "Usage: %s <config-file>\n", argv[0]);
+		return 1;
+	}
+	const std::string configFile = argv[1];
+
+	// -----------------------------------------------------------------------
+	// Configuration -- must be loaded before logger so we can read [Log]
+	// -----------------------------------------------------------------------
+
+	CDStarRepeaterConfig* config = nullptr;
+	try {
+		config = new CDStarRepeaterConfig(configFile);
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "Could not open configuration file %s: %s\n",
+			configFile.c_str(), e.what());
+		return 1;
+	}
+
+	// -----------------------------------------------------------------------
+	// Logging -- driven entirely by [Log] in the config file
+	// -----------------------------------------------------------------------
+
+	{
+		std::string  logFilePath;
+		unsigned int logFileLevel, logDisplayLevel, logMQTTLevel;
+		config->getLog(logFilePath, logFileLevel, logDisplayLevel, logMQTTLevel);
+
+#if defined(MQTT)
+		g_mqttLevel = logMQTTLevel;
+#endif
+
+		const bool wantFile    = (logFileLevel    != 0U);
+		const bool wantDisplay = (logDisplayLevel != 0U);
+
+		if (wantFile || wantDisplay) {
+			const std::string logBaseName = "dstarrepeaterd";
+			// Pass empty directory when file logging is disabled so the logger
+			// skips opening a file while still writing to stdout.
+			const std::string logDir = wantFile ? logFilePath : std::string();
+			try {
+				CLogger::setInstance(new CLogger(logDir, logBaseName, logFileLevel, logDisplayLevel));
+			} catch (const std::exception& e) {
+				std::fprintf(stderr, "Could not open log file in %s: %s -- logging to stderr only\n",
+					logFilePath.c_str(), e.what());
+			}
+		}
+		// When both levels are 0, no CLogger is installed; the wxLogXxx macros
+		// silently drop output because getInstance() returns nullptr.
+	}
+
+	// -----------------------------------------------------------------------
+	// Single-instance PID file lock
+	// -----------------------------------------------------------------------
+
+	std::string pidName = APPLICATION_NAME;
+	for (char& ch : pidName)
+		if (ch == ' ') ch = '_';
+
+#if defined(_WIN32)
+	HANDLE hMutex = CreateMutexA(nullptr, TRUE, pidName.c_str());
+	if (GetLastError() == ERROR_ALREADY_EXISTS) {
+		wxLogError("Another copy of the D-Star Repeater is running, exiting");
+		delete config;
+		return 1;
+	}
+#else
+	std::string pidPath = "/var/run/" + pidName + ".pid";
+#ifdef O_NOFOLLOW
+	int pidFd = open(pidPath.c_str(), O_RDWR | O_CREAT | O_NOFOLLOW, 0600);
+#else
+	int pidFd = open(pidPath.c_str(), O_RDWR | O_CREAT, 0600);
+#endif
+	if (pidFd < 0) {
+		wxLogError("Cannot create PID file %s", pidPath.c_str());
+		delete config;
+		return 1;
+	}
+	if (flock(pidFd, LOCK_EX | LOCK_NB) < 0) {
+		wxLogError("Another copy of the D-Star Repeater is running, exiting");
+		close(pidFd);
+		delete config;
+		return 1;
+	}
+
+	// Write our PID to the file for service managers
+	char pidBuf[16];
+	int pidLen = ::snprintf(pidBuf, sizeof(pidBuf), "%d\n", (int)::getpid());
+	if (::ftruncate(pidFd, 0) == 0) {
+		ssize_t ret = ::write(pidFd, pidBuf, pidLen);
+		if (ret < 0)
+			::fprintf(stderr, "Failed to write PID file\n");
+	}
+#endif
+
+	// -----------------------------------------------------------------------
+	// OS identification
+	// -----------------------------------------------------------------------
+
+#if defined(_WIN32)
+	wxLogInfo("Running on Windows");
+#else
+	struct utsname unameInfo;
+	if (uname(&unameInfo) == 0) {
+		wxLogInfo("Using %s %s on %s", unameInfo.sysname, unameInfo.release, unameInfo.machine);
+	}
+#endif
+
+	wxLogInfo("Starting %s - %s", APPLICATION_NAME.c_str(), VERSION.c_str());
+	wxLogInfo("Config file: %s", configFile.c_str());
+
+	// -----------------------------------------------------------------------
+	// MQTT (optional)
+	// -----------------------------------------------------------------------
+
+#if defined(MQTT)
+	{
+		std::string  mqttHost, mqttUsername, mqttPassword, mqttName;
+		unsigned int mqttPort, mqttKeepalive;
+		bool         mqttAuth;
+		config->getMQTT(mqttHost, mqttPort, mqttAuth, mqttUsername, mqttPassword, mqttKeepalive, mqttName);
+
+		if (!mqttHost.empty()) {
+			std::vector<std::pair<std::string, void (*)(const unsigned char*, unsigned int)>> subscriptions;
+
+			g_mqtt = new CMQTTConnection(
+				mqttHost,
+				static_cast<unsigned short>(mqttPort),
+				mqttName,
+				mqttAuth,
+				mqttUsername,
+				mqttPassword,
+				subscriptions,
+				mqttKeepalive);
+
+			bool ok = g_mqtt->open();
+			if (!ok) {
+				wxLogError("Unable to start MQTT connection to %s:%u", mqttHost.c_str(), mqttPort);
+				delete g_mqtt;
+				g_mqtt = nullptr;
+			} else {
+				wxLogInfo("MQTT connected to %s:%u as %s", mqttHost.c_str(), mqttPort, mqttName.c_str());
+			}
+		}
+	}
+#endif
+
+	// -----------------------------------------------------------------------
+	// Audio directory (from config [Paths])
+	// -----------------------------------------------------------------------
+
+	std::string dataDir, audioDir;
+	config->getPaths(dataDir, audioDir);
+	(void)dataDir;  // DATA_DIR is baked in at compile time for BeaconUnit
+
+	// -----------------------------------------------------------------------
+	// Signal handlers
+	// -----------------------------------------------------------------------
+
+#if defined(_WIN32)
+	SetConsoleCtrlHandler(consoleHandler, TRUE);
+#else
+	struct sigaction sa;
+	std::memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = handleSignal;
+	sigemptyset(&sa.sa_mask);
+	sigaction(SIGTERM, &sa, nullptr);
+	sigaction(SIGINT,  &sa, nullptr);
+#endif
+
+	// -----------------------------------------------------------------------
+	// Create and run the repeater thread
+	// -----------------------------------------------------------------------
+
+	std::string commandLine[6];
+	IDStarRepeaterThread* thread = nullptr;
+	try {
+		thread = createThread(config, audioDir, commandLine);
+	} catch (const std::exception& e) {
+		wxLogError("Failed to create repeater thread: %s", e.what());
+		delete config;
+#if defined(MQTT)
+		if (g_mqtt != nullptr) {
+			g_mqtt->close();
+			delete g_mqtt;
+			g_mqtt = nullptr;
+		}
+#endif
+#if defined(_WIN32)
+		ReleaseMutex(hMutex);
+		CloseHandle(hMutex);
+#else
+		flock(pidFd, LOCK_UN);
+		close(pidFd);
+		unlink(pidPath.c_str());
+#endif
+		delete CLogger::getInstance();
+		CLogger::setInstance(nullptr);
+		return 1;
+	}
+
+	// -----------------------------------------------------------------------
+	// Main loop -- block until signalled
+	// -----------------------------------------------------------------------
+
+	while (g_running)
+		std::this_thread::sleep_for(std::chrono::seconds(1));
+
+	// -----------------------------------------------------------------------
+	// Shutdown
+	// -----------------------------------------------------------------------
+
+	wxLogInfo("%s is exiting", APPLICATION_NAME.c_str());
+
+	thread->kill();
+	thread->m_thread.join();
+	delete thread;
+
+#if defined(MQTT)
+	if (g_mqtt != nullptr) {
+		g_mqtt->close();
+		delete g_mqtt;
+		g_mqtt = nullptr;
+	}
+#endif
+
+	delete config;
+
+#if defined(_WIN32)
+	ReleaseMutex(hMutex);
+	CloseHandle(hMutex);
+#else
+	flock(pidFd, LOCK_UN);
+	close(pidFd);
+	unlink(pidPath.c_str());
+#endif
+
+	return 0;
 }

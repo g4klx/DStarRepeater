@@ -16,13 +16,9 @@
 
 #include "HardwareController.h"
 
-#include <wx/wx.h>
+#if !defined(_WIN32)
 
-#if defined(__WINDOWS__)
-#include <windows.h>
-#else
 #include <libusb-1.0/libusb.h>
-#endif
 
 class CK8055Controller : public IHardwareController {
 public:
@@ -47,12 +43,32 @@ private:
 	bool                  m_outp6;
 	bool                  m_outp7;
 	bool                  m_outp8;
-#if defined(__WINDOWS__)
-	HANDLE                m_handle;
-#else
 	libusb_context*       m_context;
 	libusb_device_handle* m_handle;
-#endif
 };
+
+#else
+
+// Windows stub — K8055 requires the Velleman K8055D.dll which is not bundled.
+// Instantiating this class on Windows will log an error and open() will return false.
+
+class CK8055Controller : public IHardwareController {
+public:
+	CK8055Controller(unsigned int address);
+	virtual ~CK8055Controller();
+
+	virtual bool open();
+
+	virtual void getDigitalInputs(bool& inp1, bool& inp2, bool& inp3, bool& inp4, bool& inp5);
+
+	virtual void setDigitalOutputs(bool outp1, bool outp2, bool outp3, bool outp4, bool outp5, bool outp6, bool outp7, bool outp8);
+
+	virtual void close();
+
+private:
+	unsigned int m_address;
+};
+
+#endif
 
 #endif

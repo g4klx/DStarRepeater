@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2011,2012,2013,2018 by Jonathan Naylor G4KLX
+ *   Copyright (C) 2024 by the DStarRepeater contributors
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -16,32 +16,28 @@
  *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-#ifndef	DStarRepeaterConfigApp_H
-#define	DStarRepeaterConfigApp_H
+/*
+ * Compatibility header that provides the standard C++17 includes used
+ * throughout the codebase.  This replaces the former wx/wx.h dependency so
+ * that non-GUI translation units compile without wxWidgets.  Include this
+ * instead of individual standard headers wherever the full set is needed.
+ */
 
-#include "DStarRepeaterConfigFrame.h"
-#include "DStarRepeaterConfigDefs.h"
+#ifndef StdCompat_H
+#define StdCompat_H
 
-#include <wx/wx.h>
-
-class CDStarRepeaterConfigApp : public wxApp {
-
-public:
-	CDStarRepeaterConfigApp();
-	virtual ~CDStarRepeaterConfigApp();
-
-	virtual bool OnInit();
-	virtual int  OnExit();
-	
-	virtual void OnInitCmdLine(wxCmdLineParser& parser);
-	virtual bool OnCmdLineParsed(wxCmdLineParser& parser);
-
-private:
-	wxString                   m_name;
-	wxString                   m_confDir;
-	CDStarRepeaterConfigFrame* m_frame;
-};
-
-wxDECLARE_APP(CDStarRepeaterConfigApp);
+#include <string>
+#include <vector>
+#include <cstdint>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cassert>
+#include <mutex>
+#include <thread>
+#include <chrono>
+#include <algorithm>
+#include <unordered_map>
 
 #endif

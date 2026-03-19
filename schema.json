@@ -1,0 +1,259 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"title": "DStarRepeater MQTT JSON Schema",
+	"description": "Defines all JSON messages published by DStarRepeater to the MQTT 'json' and 'status' topics. Compatible with Display-Driver and MMDVMHost consumers.",
+
+	"oneOf": [
+		{ "$ref": "#/$defs/topic_json" },
+		{ "$ref": "#/$defs/topic_status" }
+	],
+
+	"$defs": {
+		"dstar_callsign": {
+			"type": "string",
+			"description": "D-Star callsign, 8 characters, space-padded",
+			"minLength": 0,
+			"maxLength": 8
+		},
+		"dstar_extension": {
+			"type": "string",
+			"description": "D-Star callsign extension (short suffix), 4 characters",
+			"minLength": 0,
+			"maxLength": 4
+		},
+		"source": {
+			"type": "string",
+			"description": "Origin of the transmission",
+			"enum": ["rf", "net"]
+		},
+		"action": {
+			"type": "string",
+			"description": "D-Star event action type",
+			"enum": ["start", "end", "lost"]
+		},
+		"rpt_state": {
+			"type": "string",
+			"description": "Repeater state machine state",
+			"enum": ["shutdown", "listening", "valid", "valid_wait", "invalid", "invalid_wait", "timeout", "timeout_wait", "network", "unknown"]
+		},
+		"rx_state": {
+			"type": "string",
+			"description": "Receiver state machine state",
+			"enum": ["listening", "process_data", "process_slow_data", "unknown"]
+		},
+		"ber": {
+			"type": "number",
+			"description": "Bit Error Rate as a percentage",
+			"minimum": 0.0
+		},
+		"rssi": {
+			"type": "integer",
+			"description": "Received signal strength in dBm (DVAP modem only)",
+			"minimum": -256,
+			"maximum": -1
+		},
+		"mmdvm_mode": {
+			"type": "string",
+			"description": "MMDVM mode identifier (for Display-Driver compatibility)",
+			"enum": ["idle", "D-Star"]
+		},
+
+		"topic_json": {
+			"description": "Messages published to {name}/json — event-driven, Display-Driver compatible",
+			"oneOf": [
+				{ "$ref": "#/$defs/msg_dstar_start" },
+				{ "$ref": "#/$defs/msg_dstar_end" },
+				{ "$ref": "#/$defs/msg_dstar_lost" },
+				{ "$ref": "#/$defs/msg_mmdvm_idle" },
+				{ "$ref": "#/$defs/msg_ber" },
+				{ "$ref": "#/$defs/msg_rssi" },
+				{ "$ref": "#/$defs/msg_text" }
+			]
+		},
+
+		"msg_dstar_start": {
+			"description": "Published when a D-Star transmission begins (RF or network)",
+			"type": "object",
+			"properties": {
+				"D-Star": {
+					"type": "object",
+					"properties": {
+						"action":         { "const": "start" },
+						"source_cs":      { "$ref": "#/$defs/dstar_callsign" },
+						"source_ext":     { "$ref": "#/$defs/dstar_extension" },
+						"destination_cs": { "$ref": "#/$defs/dstar_callsign" },
+						"reflector":      { "$ref": "#/$defs/dstar_callsign" },
+						"source":         { "$ref": "#/$defs/source" }
+					},
+					"required": ["action", "source_cs", "source_ext", "destination_cs", "reflector", "source"]
+				}
+			},
+			"required": ["D-Star"],
+			"examples": [
+				{
+					"D-Star": {
+						"action": "start",
+						"source_cs": "MW0MWZ  ",
+						"source_ext": "    ",
+						"destination_cs": "CQCQCQ  ",
+						"reflector": "GB7XX  G",
+						"source": "rf"
+					}
+				}
+			]
+		},
+
+		"msg_dstar_end": {
+			"description": "Published when a D-Star transmission ends normally",
+			"type": "object",
+			"properties": {
+				"D-Star": {
+					"type": "object",
+					"properties": {
+						"action": { "const": "end" }
+					},
+					"required": ["action"]
+				}
+			},
+			"required": ["D-Star"],
+			"examples": [
+				{ "D-Star": { "action": "end" } }
+			]
+		},
+
+		"msg_dstar_lost": {
+			"description": "Published when a D-Star transmission is lost (watchdog timeout)",
+			"type": "object",
+			"properties": {
+				"D-Star": {
+					"type": "object",
+					"properties": {
+						"action": { "const": "lost" }
+					},
+					"required": ["action"]
+				}
+			},
+			"required": ["D-Star"],
+			"examples": [
+				{ "D-Star": { "action": "lost" } }
+			]
+		},
+
+		"msg_mmdvm_idle": {
+			"description": "Published on return to idle (after every end/lost event). Display-Driver compatible.",
+			"type": "object",
+			"properties": {
+				"MMDVM": {
+					"type": "object",
+					"properties": {
+						"mode": { "const": "idle" }
+					},
+					"required": ["mode"]
+				}
+			},
+			"required": ["MMDVM"],
+			"examples": [
+				{ "MMDVM": { "mode": "idle" } }
+			]
+		},
+
+		"msg_ber": {
+			"description": "Published once per second during an active RF transmission with the current BER",
+			"type": "object",
+			"properties": {
+				"BER": {
+					"type": "object",
+					"properties": {
+						"mode":  { "$ref": "#/$defs/mmdvm_mode" },
+						"value": { "$ref": "#/$defs/ber" }
+					},
+					"required": ["mode", "value"]
+				}
+			},
+			"required": ["BER"],
+			"examples": [
+				{ "BER": { "mode": "D-Star", "value": 1.3 } }
+			]
+		},
+
+		"msg_rssi": {
+			"description": "Published once per second during an active RF transmission with the DVAP signal strength",
+			"type": "object",
+			"properties": {
+				"RSSI": {
+					"type": "object",
+					"properties": {
+						"mode":  { "$ref": "#/$defs/mmdvm_mode" },
+						"value": { "$ref": "#/$defs/rssi" }
+					},
+					"required": ["mode", "value"]
+				}
+			},
+			"required": ["RSSI"],
+			"examples": [
+				{ "RSSI": { "mode": "D-Star", "value": -85 } }
+			]
+		},
+
+		"msg_text": {
+			"description": "Published when slow-data text is decoded from an RF transmission",
+			"type": "object",
+			"properties": {
+				"Text": {
+					"type": "object",
+					"properties": {
+						"mode":  { "$ref": "#/$defs/mmdvm_mode" },
+						"value": { "type": "string", "description": "Decoded slow-data text message" }
+					},
+					"required": ["mode", "value"]
+				}
+			},
+			"required": ["Text"],
+			"examples": [
+				{ "Text": { "mode": "D-Star", "value": "Hello from Pi-Star" } }
+			]
+		},
+
+		"topic_status": {
+			"description": "Published to {name}/status — polled once per second with full repeater state",
+			"type": "object",
+			"properties": {
+				"myCall1":  { "$ref": "#/$defs/dstar_callsign" },
+				"myCall2":  { "$ref": "#/$defs/dstar_extension" },
+				"yourCall": { "$ref": "#/$defs/dstar_callsign" },
+				"rptCall1": { "$ref": "#/$defs/dstar_callsign" },
+				"rptCall2": { "$ref": "#/$defs/dstar_callsign" },
+				"tx":       { "type": "boolean", "description": "True when the repeater is transmitting" },
+				"rxState":  { "$ref": "#/$defs/rx_state" },
+				"rptState": { "$ref": "#/$defs/rpt_state" },
+				"ber":      { "$ref": "#/$defs/ber" },
+				"text":     { "type": "string", "description": "Current slow-data text (empty when idle)" },
+				"status1":  { "type": "string", "description": "User-configured status message 1" },
+				"status2":  { "type": "string", "description": "User-configured status message 2" },
+				"status3":  { "type": "string", "description": "User-configured status message 3" },
+				"status4":  { "type": "string", "description": "User-configured status message 4" },
+				"status5":  { "type": "string", "description": "User-configured status message 5" }
+			},
+			"required": ["myCall1", "myCall2", "yourCall", "rptCall1", "rptCall2", "tx", "rxState", "rptState", "ber", "text", "status1", "status2", "status3", "status4", "status5"],
+			"examples": [
+				{
+					"myCall1": "",
+					"myCall2": "",
+					"yourCall": "",
+					"rptCall1": "",
+					"rptCall2": "",
+					"tx": false,
+					"rxState": "listening",
+					"rptState": "listening",
+					"ber": 0.0,
+					"text": "",
+					"status1": "",
+					"status2": "",
+					"status3": "",
+					"status4": "",
+					"status5": ""
+				}
+			]
+		}
+	}
+}

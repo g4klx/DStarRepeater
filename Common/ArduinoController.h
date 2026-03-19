@@ -16,13 +16,12 @@
 
 #include "SerialDataController.h"
 #include "HardwareController.h"
-
-#include <wx/wx.h>
+#include "StdCompat.h"
 
 
 class CArduinoController : public IHardwareController {
 public:
-	CArduinoController(const wxString& port);
+	CArduinoController(const std::string& port);
 	virtual ~CArduinoController();
 
 	virtual bool open();

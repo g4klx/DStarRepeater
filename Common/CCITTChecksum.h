@@ -14,8 +14,18 @@
 #ifndef	CCITTChecksum_H
 #define	CCITTChecksum_H
 
-#include <wx/wx.h>
+#include <cstdint>
 
+/*
+ * CCITT-16 (CRC-16/CCITT) checksum in standard bit order.
+ *
+ * update() feeds bytes into the running CRC.  result() writes the two-byte
+ * checksum into the provided buffer.  check() compares a stored two-byte
+ * checksum against the computed value.  reset() resets to the initial state.
+ *
+ * See also CCCITTChecksumReverse, which uses a bit-reversed variant required
+ * by the D-Star radio header and DSRP wire formats.
+ */
 class CCCITTChecksum {
 public:
 	CCCITTChecksum();
@@ -31,8 +41,8 @@ public:
 
 private:
 	union {
-		wxUint16 m_crc16;
-		wxUint8  m_crc8[2U];
+		uint16_t m_crc16;
+		uint8_t  m_crc8[2U];
 	};
 };
 

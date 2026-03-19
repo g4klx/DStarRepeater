@@ -21,27 +21,39 @@
 #define SerialLineController_H
 
 #include "HardwareController.h"
+#include "StdCompat.h"
 
-#include <wx/wx.h>
-
-#if defined(__WINDOWS__)
+#if defined(_WIN32)
 #include <windows.h>
 #endif
 
+// Serial modem control lines used for PTT / COR signalling.
 enum SERIALPIN {
-	SERIAL_CD,
-	SERIAL_CTS,
-	SERIAL_DSR,
-	SERIAL_DTR,
-	SERIAL_RTS,
-	SERIAL_ECHOLINK
+	SERIAL_CD,        // Carrier Detect — input, indicates received signal.
+	SERIAL_CTS,       // Clear To Send — input.
+	SERIAL_DSR,       // Data Set Ready — input.
+	SERIAL_DTR,       // Data Terminal Ready — output, used for PTT on some hardware.
+	SERIAL_RTS,       // Request To Send — output, most common PTT line.
+	SERIAL_ECHOLINK   // EchoLink-compatible pin assignment variant.
 };
 
 const unsigned int MAX_DEVICE_NAME = 255U;
 
+/*
+ * Serial port line-level controller for PTT and COR/COS I/O.
+ *
+ * Implements IHardwareController using the modem-control lines of an RS-232
+ * (or USB-serial) port.  RTS and/or DTR are used as PTT outputs; CD, CTS,
+ * and DSR are used as COR/squelch inputs.  The config parameter selects which
+ * pin assignment scheme is used (see the SERIALPIN enum and the controller
+ * config documentation).
+ *
+ * This controller does not transfer any data — it only toggles the control
+ * lines.  For serial data transfer use CSerialDataController.
+ */
 class CSerialLineController : public IHardwareController {
 public:
-	CSerialLineController(const wxString& device, unsigned int config = 1U);
+	CSerialLineController(const std::string& device, unsigned int config = 1U);
 	virtual ~CSerialLineController();
 
 	virtual bool open();
@@ -59,11 +71,11 @@ public:
 	virtual void close();
 
 private:
-	wxString     m_device;
-	unsigned int m_config;
+	std::string  m_device;
+	unsigned int m_config;   // Pin assignment scheme index.
 	bool         m_rts;
 	bool         m_dtr;
-#if defined(__WINDOWS__)
+#if defined(_WIN32)
 	HANDLE       m_handle;
 #else
 	int          m_fd;

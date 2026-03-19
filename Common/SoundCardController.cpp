@@ -19,6 +19,13 @@
 #include "CCITTChecksumReverse.h"
 #include "SoundCardController.h"
 #include "DStarDefines.h"
+#include "Logger.h"
+
+#include <cassert>
+#include <chrono>
+#include <thread>
+#include <cstdint>
+#include <cstring>
 
 // #define	AUDIO_LOOPBACK
 
@@ -33,18 +40,18 @@ const unsigned int MAX_SYNC_BITS = 50U * DV_FRAME_LENGTH_BITS;
 const unsigned int FEC_SECTION_LENGTH_BITS = 660U;
 
 // D-Star bit order version of 0x55 0x55 0x6E 0x0A
-const wxUint32     FRAME_SYNC_DATA = 0x00557650U;
-const wxUint32     FRAME_SYNC_MASK = 0x00FFFFFFU;
+const uint32_t     FRAME_SYNC_DATA = 0x00557650U;
+const uint32_t     FRAME_SYNC_MASK = 0x00FFFFFFU;
 const unsigned int FRAME_SYNC_ERRS = 2U;
 
 // D-Star bit order version of 0x55 0x2D 0x16
-const wxUint32     DATA_SYNC_DATA = 0x00AAB468U;
-const wxUint32     DATA_SYNC_MASK = 0x00FFFFFFU;
+const uint32_t     DATA_SYNC_DATA = 0x00AAB468U;
+const uint32_t     DATA_SYNC_MASK = 0x00FFFFFFU;
 const unsigned int DATA_SYNC_ERRS = 2U;
 
 // D-Star bit order version of 0x55 0x55 0xC8 0x7A
-const wxUint32     END_SYNC_DATA = 0xAAAA135EU;
-const wxUint32     END_SYNC_MASK = 0xFFFFFFFFU;
+const uint32_t     END_SYNC_DATA = 0xAAAA135EU;
+const uint32_t     END_SYNC_MASK = 0xFFFFFFFFU;
 const unsigned int END_SYNC_ERRS = 3U;
 
 const unsigned char BIT_SYNC    = 0xAAU;
@@ -149,7 +156,7 @@ const unsigned char INTERLEAVE_TABLE_TX[] = {
   0x4AU, 0x07U, 0x4EU, 0x02U, 0x51U, 0x05U, 0x02U, 0x05U, 0x06U, 0x01U,
   0x09U, 0x05U, 0x0DU, 0x01U, 0x10U, 0x05U, 0x14U, 0x01U, 0x17U, 0x05U,
   0x1BU, 0x01U, 0x1EU, 0x05U, 0x22U, 0x01U, 0x25U, 0x05U, 0x29U, 0x01U,
-  0x2CU, 0x05U, 0x30U, 0x00U, 0x33U, 0x03U, 0x36U, 0x06U, 0x3AU, 0x01U, 
+  0x2CU, 0x05U, 0x30U, 0x00U, 0x33U, 0x03U, 0x36U, 0x06U, 0x3AU, 0x01U,
   0x3DU, 0x04U, 0x40U, 0x07U, 0x44U, 0x02U, 0x47U, 0x05U, 0x4BU, 0x00U,
   0x4EU, 0x03U, 0x51U, 0x06U, 0x02U, 0x06U, 0x06U, 0x02U, 0x09U, 0x06U,
   0x0DU, 0x02U, 0x10U, 0x06U, 0x14U, 0x02U, 0x17U, 0x06U, 0x1BU, 0x02U,
@@ -358,7 +365,7 @@ const unsigned char SCRAMBLE_TABLE_RX[] = {
   0x7BU, 0x9AU, 0x04U, 0x22U, 0xA3U, 0x6BU, 0x83U, 0x59U, 0x39U, 0x6FU,
   0x00U};
 
-CSoundCardController::CSoundCardController(const wxString& rxDevice, const wxString& txDevice, bool rxInvert, bool txInvert, wxFloat32 rxLevel, wxFloat32 txLevel, unsigned int txDelay, unsigned int txTail) :
+CSoundCardController::CSoundCardController(const std::string& rxDevice, const std::string& txDevice, bool rxInvert, bool txInvert, float rxLevel, float txLevel, unsigned int txDelay, unsigned int txTail) :
 CModem(),
 m_sound(rxDevice, txDevice, DSTAR_RADIO_SAMPLE_RATE, DSTAR_RADIO_BLOCK_SIZE),
 m_rxLevel(rxLevel),
@@ -371,19 +378,19 @@ m_rxState(DSRSCCS_NONE),
 m_patternBuffer(0x00U),
 m_demodulator(),
 m_modulator(),
-m_rxBuffer(NULL),
+m_rxBuffer(nullptr),
 m_rxBufferBits(0U),
 m_dataBits(0U),
 m_mar(0U),
-m_pathMetric(NULL),
-m_pathMemory0(NULL),
-m_pathMemory1(NULL),
-m_pathMemory2(NULL),
-m_pathMemory3(NULL),
-m_fecOutput(NULL)
+m_pathMetric(nullptr),
+m_pathMemory0(nullptr),
+m_pathMemory1(nullptr),
+m_pathMemory2(nullptr),
+m_pathMemory3(nullptr),
+m_fecOutput(nullptr)
 {
-	wxASSERT(!rxDevice.IsEmpty());
-	wxASSERT(!txDevice.IsEmpty());
+	assert(!rxDevice.empty());
+	assert(!txDevice.empty());
 
 	m_modulator.setInvert(txInvert);
 	m_demodulator.setInvert(rxInvert);
@@ -417,19 +424,17 @@ bool CSoundCardController::start()
 	if (!ret)
 		return false;
 
-	Create();
-	SetPriority(100U);
-	Run();
+	m_thread = std::thread(&CSoundCardController::entry, this);
 
 	return true;
 }
 
-void* CSoundCardController::Entry()
+void CSoundCardController::entry()
 {
-	wxLogMessage(wxT("Starting Sound Card Controller thread"));
+	wxLogMessage("Starting Sound Card Controller thread");
 
 	while (!m_stopped) {
-		wxFloat32 val;
+		float val;
 		while (m_rxAudio.getData(&val, 1U) == 1U) {
 			TRISTATE state = m_demodulator.decode(val * m_rxLevel);
 			switch (state) {
@@ -468,21 +473,19 @@ void* CSoundCardController::Entry()
 			}
 		}
 
-		Sleep(10UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 
-	wxLogMessage(wxT("Stopping Sound Card Controller thread"));
+	wxLogMessage("Stopping Sound Card Controller thread");
 
 	m_sound.close();
-
-	return NULL;
 }
 
 bool CSoundCardController::writeHeader(const CHeaderData& header)
 {
 	bool ret = m_txAudio.hasSpace((m_txDelay + 60U + 85U) * 8U * DSTAR_RADIO_BIT_LENGTH);
 	if (!ret) {
-		wxLogWarning(wxT("No space to write the header"));
+		wxLogWarning("No space to write the header");
 		return false;
 	}
 
@@ -494,25 +497,25 @@ bool CSoundCardController::writeHeader(const CHeaderData& header)
 	buffer1[1U] = header.getFlag2();
 	buffer1[2U] = header.getFlag3();
 
-	wxString rpt2 = header.getRptCall2();
-	for (unsigned int i = 0U; i < rpt2.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer1[i + 3U]  = rpt2.GetChar(i);
+	std::string rpt2 = header.getRptCall2();
+	for (unsigned int i = 0U; i < rpt2.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer1[i + 3U]  = rpt2[i];
 
-	wxString rpt1 = header.getRptCall1();
-	for (unsigned int i = 0U; i < rpt1.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer1[i + 11U] = rpt1.GetChar(i);
+	std::string rpt1 = header.getRptCall1();
+	for (unsigned int i = 0U; i < rpt1.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer1[i + 11U] = rpt1[i];
 
-	wxString your = header.getYourCall();
-	for (unsigned int i = 0U; i < your.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer1[i + 19U] = your.GetChar(i);
+	std::string your = header.getYourCall();
+	for (unsigned int i = 0U; i < your.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer1[i + 19U] = your[i];
 
-	wxString my1 = header.getMyCall1();
-	for (unsigned int i = 0U; i < my1.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer1[i + 27U] = my1.GetChar(i);
+	std::string my1 = header.getMyCall1();
+	for (unsigned int i = 0U; i < my1.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer1[i + 27U] = my1[i];
 
-	wxString my2 = header.getMyCall2();
-	for (unsigned int i = 0U; i < my2.Len() && i < SHORT_CALLSIGN_LENGTH; i++)
-		buffer1[i + 35U] = my2.GetChar(i);
+	std::string my2 = header.getMyCall2();
+	for (unsigned int i = 0U; i < my2.size() && i < SHORT_CALLSIGN_LENGTH; i++)
+		buffer1[i + 35U] = my2[i];
 
 	CCCITTChecksumReverse cksum1;
 	cksum1.update(buffer1 + 0U, RADIO_HEADER_LENGTH_BYTES - 2U);
@@ -542,7 +545,7 @@ bool CSoundCardController::writeData(const unsigned char* data, unsigned int len
 
 		bool ret = m_txAudio.hasSpace(tailBlocks * END_PATTERN_LENGTH_BYTES * 8U * DSTAR_RADIO_BIT_LENGTH);
 		if (!ret) {
-			wxLogWarning(wxT("No space to write end data"));
+			wxLogWarning("No space to write end data");
 			return false;
 		}
 
@@ -553,7 +556,7 @@ bool CSoundCardController::writeData(const unsigned char* data, unsigned int len
 	} else {
 		bool ret = m_txAudio.hasSpace(length * 8U * DSTAR_RADIO_BIT_LENGTH);
 		if (!ret) {
-			wxLogWarning(wxT("No space to write data"));
+			wxLogWarning("No space to write data");
 			return false;
 		}
 
@@ -576,14 +579,10 @@ bool CSoundCardController::isTXReady()
 
 bool CSoundCardController::isTX()
 {
-#if (defined(__APPLE__) && defined(__MACH__)) || defined(__WINDOWS__)
-	return m_txAudio.hasData();
-#else
-        return m_sound.isWriterBusy() || m_txAudio.hasData();
-#endif
+	return m_sound.isWriterBusy() || m_txAudio.hasData();
 }
 
-void CSoundCardController::readCallback(const wxFloat32* input, unsigned int n, int id)
+void CSoundCardController::readCallback(const float* input, unsigned int n, int id)
 {
 #if !defined(AUDIO_LOOPBACK)
 	if (!m_stopped)
@@ -591,12 +590,12 @@ void CSoundCardController::readCallback(const wxFloat32* input, unsigned int n, 
 #endif
 }
 
-void CSoundCardController::writeCallback(wxFloat32* output, int& n, int id)
+void CSoundCardController::writeCallback(float* output, int& n, int id)
 {
-        if (n == 0U)
-                return;
+	if (n == 0U)
+		return;
 
-	::memset(output, 0x00, n * sizeof(wxFloat32));
+	::memset(output, 0x00, n * sizeof(float));
 
 	if (!m_stopped) {
 		n = m_txAudio.getData(output, n);
@@ -691,7 +690,7 @@ void CSoundCardController::txHeader(const unsigned char* in, unsigned char* out)
 
 void CSoundCardController::writeBits(unsigned char c)
 {
-	wxFloat32 buffer[DSTAR_RADIO_BIT_LENGTH];
+	float buffer[DSTAR_RADIO_BIT_LENGTH];
 
 	unsigned char mask = 0x01U;
 	for (unsigned int i = 0U; i < 8U; i++) {
@@ -711,7 +710,7 @@ void CSoundCardController::writeBits(unsigned char c)
 void CSoundCardController::processNone(bool bit)
 {
 	m_patternBuffer <<= 1;
-    if (bit)
+	if (bit)
 		m_patternBuffer |= 0x01U;
 
 	// Exact matching of the frame sync sequence
@@ -732,7 +731,7 @@ void CSoundCardController::processNone(bool bit)
 		// Lock the GMSK PLL to this signal
 		m_demodulator.lock(true);
 
-		wxMutexLocker locker(m_mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);
 
 		unsigned char data[2U];
 		data[0U] = DSMTT_DATA;
@@ -762,12 +761,12 @@ void CSoundCardController::processHeader(bool bit)
 
 	// A full FEC header
 	if (m_rxBufferBits == FEC_SECTION_LENGTH_BITS) {
-		// Process the scrambling, interleaving and FEC, then return if the chcksum was correct
+		// Process the scrambling, interleaving and FEC, then return if the checksum was correct
 		unsigned char header[RADIO_HEADER_LENGTH_BYTES];
 		bool ok = rxHeader(m_rxBuffer, header);
 		if (ok) {
 			// The checksum is correct
-			wxMutexLocker locker(m_mutex);
+			std::lock_guard<std::mutex> lock(m_mutex);
 
 			unsigned char data[2U];
 			data[0U] = DSMTT_HEADER;
@@ -806,7 +805,7 @@ void CSoundCardController::processData(bool bit)
 		// Release the GMSK PLL
 		m_demodulator.lock(false);
 
-		wxMutexLocker locker(m_mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);
 
 		unsigned char data[2U];
 		data[0U] = DSMTT_EOT;
@@ -834,7 +833,7 @@ void CSoundCardController::processData(bool bit)
 		// Release the GMSK PLL
 		m_demodulator.lock(false);
 
-		wxMutexLocker locker(m_mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);
 
 		unsigned char data[2U];
 		data[0U] = DSMTT_LOST;
@@ -848,8 +847,8 @@ void CSoundCardController::processData(bool bit)
 	// Check to see if the sync is arriving late
 	if (m_rxBufferBits == DV_FRAME_LENGTH_BITS && !syncSeen) {
 		for (unsigned int i = 1U; i <= 3U; i++) {
-			wxUint32 syncMask = DATA_SYNC_MASK >> i;
-			wxUint32 syncData = DATA_SYNC_DATA >> i;
+			uint32_t syncMask = DATA_SYNC_MASK >> i;
+			uint32_t syncData = DATA_SYNC_DATA >> i;
 			errs = countBits((m_patternBuffer & syncMask) ^ syncData);
 			if (errs <= DATA_SYNC_ERRS) {
 				m_rxBufferBits -= i;
@@ -866,7 +865,7 @@ void CSoundCardController::processData(bool bit)
 			m_rxBuffer[11U] = DATA_SYNC_BYTES[2U];
 		}
 
-		wxMutexLocker locker(m_mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);
 
 		unsigned char data[2U];
 		data[0U] = DSMTT_DATA;
@@ -881,14 +880,14 @@ void CSoundCardController::processData(bool bit)
 	}
 }
 
-unsigned int CSoundCardController::countBits(wxUint32 num)
+unsigned int CSoundCardController::countBits(uint32_t num)
 {
-    unsigned int count = 0U;
+	unsigned int count = 0U;
 
-    for (unsigned int i = 0U; i < 8U; i++)
-        count += NIBBLE_BITS[(num >> (i * 4U)) & 0x0FU];
+	for (unsigned int i = 0U; i < 8U; i++)
+		count += NIBBLE_BITS[(num >> (i * 4U)) & 0x0FU];
 
-    return count;
+	return count;
 }
 
 bool CSoundCardController::rxHeader(unsigned char* in, unsigned char* out)
@@ -1017,7 +1016,7 @@ void CSoundCardController::acs(int* metric)
 		m_pathMemory2[j] |= BIT_MASK_TABLE1[k];
 
 	// Pres. state = S3, Prev. state = S1 & S3
- 	m1 = metric[3U] + m_pathMetric[1U];
+	m1 = metric[3U] + m_pathMetric[1U];
 	m2 = metric[7U] + m_pathMetric[3U];
 	tempMetric[3U] = m1 < m2 ? m1 : m2;
 	if (m1 < m2)
@@ -1030,7 +1029,7 @@ void CSoundCardController::acs(int* metric)
 
 	m_mar++;
 }
- 
+
 void CSoundCardController::viterbiDecode(int* data)
 {
 	int metric[8U];
@@ -1068,21 +1067,21 @@ void CSoundCardController::traceBack()
 				if (READ_BIT1(m_pathMemory1, i) == 0)
 					j = 0U;
 				else
- 					j = 2U;
+					j = 2U;
 				WRITE_BIT1(m_fecOutput, k, 1);
 				k++;
- 				break;
+				break;
 
-			case 2: // if state = S1
+			case 2: // if state = S2
 				if (READ_BIT1(m_pathMemory2, i) == 0)
- 					j = 1U;
+					j = 1U;
 				else
 					j = 3U;
 				WRITE_BIT1(m_fecOutput, k, 0);
 				k++;
 				break;
 
-			case 3U: // if state = S1
+			case 3U: // if state = S3
 				if (READ_BIT1(m_pathMemory3, i) == 0)
 					j = 1U;
 				else

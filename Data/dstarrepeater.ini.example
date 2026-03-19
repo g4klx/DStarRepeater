@@ -1,0 +1,221 @@
+# D-Star Repeater configuration file
+# Format: MMDVMHost-style INI, [Section] headers, Key=Value pairs, # comments
+# Copy this file to /etc/dstarrepeater/dstarrepeater.ini and edit for your installation.
+
+[General]
+Callsign=GB3IN  C
+Gateway=
+# Operating mode: 0=Duplex, 1=Simplex, 2=Gateway, 3=TXOnly, 4=RXOnly, 5=TX+RX
+Mode=0
+# Acknowledgement type: 0=None, 1=BER, 2=Status
+Ack=1
+Restriction=0
+RPT1Validation=1
+DTMFBlanking=1
+ErrorReply=1
+
+[Log]
+# Logging levels: 0=None, 1=Debug, 2=Message, 3=Info, 4=Warning, 5=Error, 6=Fatal
+FilePath=/var/log
+FileLevel=2
+DisplayLevel=2
+MQTTLevel=2
+
+[Paths]
+Data=/usr/share/dstarrepeater
+Audio=/var/log
+
+[Network]
+GatewayAddress=127.0.0.1
+GatewayPort=20010
+LocalAddress=127.0.0.1
+LocalPort=20011
+Name=
+
+[Modem]
+# Type: DVAP, GMSK Modem, DV-RPTR V1, DV-RPTR V2, DV-RPTR V3, DVMEGA, MMDVM,
+#       Sound Card, Split, Icom Access Point/Terminal Mode
+Type=DVAP
+
+[Times]
+# Transmission timeout in seconds
+Timeout=180
+# Acknowledgement delay in milliseconds
+AckTime=500
+
+[Beacon]
+# Beacon interval in seconds (0 to disable)
+Time=600
+Text=D-Star Repeater
+# 0=Text only, 1=Voice
+Voice=0
+# Language: 0=English UK, 1=Deutsch, 2=Dansk, 3=Francais, 4=Italiano, 5=Polski,
+#           6=Espanol, 7=Svenska, 8=Nederlands, 9=English US, 10=Norsk
+Language=0
+
+[Announcement]
+Enabled=0
+Time=500
+RecordRPT1=
+RecordRPT2=
+DeleteRPT1=
+DeleteRPT2=
+
+[Control]
+Enabled=0
+RPT1=
+RPT2=
+Shutdown=
+Startup=
+Status1=
+Status2=
+Status3=
+Status4=
+Status5=
+Command1=
+Command1Line=
+Command2=
+Command2Line=
+Command3=
+Command3Line=
+Command4=
+Command4Line=
+Command5=
+Command5Line=
+Command6=
+Command6Line=
+Output1=
+Output2=
+Output3=
+Output4=
+
+[Controller]
+# Type: (empty for none), GPIO, UDRC, Velleman K8055 - 0, URI USB - 1,
+#       Serial - /dev/ttyUSB0, Arduino - /dev/ttyUSB0
+Type=
+# Serial configuration bitmask
+SerialConfig=1
+PTTInvert=0
+ActiveHangTime=0
+
+[Outputs]
+Output1=0
+Output2=0
+Output3=0
+Output4=0
+
+[Frame Logging]
+Enabled=0
+
+[Whitelist]
+# Full path to whitelist file; leave commented out if not used
+# File=rptr_whitelist.dat
+
+[Blacklist]
+# Full path to blacklist file; leave commented out if not used
+# File=rptr_blacklist.dat
+
+[Greylist]
+# Full path to greylist file; leave commented out if not used
+# File=greylist.dat
+
+[DVAP]
+Port=
+# Frequency in Hz
+Frequency=145500000
+# Power in dBm
+Power=10
+# Squelch threshold in dBm
+Squelch=-100
+
+[GMSK]
+# Interface type: 0=LibUSB, 1=Serial
+InterfaceType=0
+# USB address in decimal (0x0300 = 768)
+Address=768
+
+[DV-RPTR V1]
+Port=
+RXInvert=0
+TXInvert=0
+# Channel: 0=A, 1=B
+Channel=0
+ModLevel=20
+TXDelay=150
+
+[DV-RPTR V2]
+# Connection type: 0=USB, 1=Network
+Connection=0
+USBPort=
+Address=127.0.0.1
+Port=0
+TXInvert=0
+ModLevel=20
+TXDelay=150
+
+[DV-RPTR V3]
+# Connection type: 0=USB, 1=Network
+Connection=0
+USBPort=
+Address=127.0.0.1
+Port=0
+TXInvert=0
+ModLevel=20
+TXDelay=150
+
+[DVMEGA]
+Port=
+# Variant: 0=Modem, 1=Radio 2M, 2=Radio 70cm, 3=Radio 2M/70cm
+Variant=0
+RXInvert=0
+TXInvert=0
+TXDelay=150
+# Frequencies in Hz
+RXFrequency=145500000
+TXFrequency=145500000
+# Power level 0-100
+Power=100
+
+[MMDVM]
+Port=
+RXInvert=0
+TXInvert=0
+PTTInvert=0
+# TX delay in milliseconds
+TXDelay=50
+# Levels 0-100
+RXLevel=100
+TXLevel=100
+
+[Sound Card]
+RXDevice=
+TXDevice=
+RXInvert=0
+TXInvert=0
+RXLevel=1.0
+TXLevel=1.0
+TXDelay=150
+TXTail=50
+
+[Split]
+LocalAddress=
+LocalPort=0
+# Timeout in milliseconds
+Timeout=0
+# TX/RX names (TXName0-TXName4, RXName0-RXName24)
+# TXName0=
+# RXName0=
+
+[Icom]
+Port=
+
+[MQTT]
+Host=127.0.0.1
+Port=1883
+# Auth: 0=None, 1=Username/Password
+Auth=0
+Username=
+Password=
+# Keepalive interval in seconds
+Keepalive=60
+Name=dstar-repeater

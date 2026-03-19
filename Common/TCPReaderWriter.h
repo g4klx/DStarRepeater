@@ -19,9 +19,14 @@
 #ifndef TCPReaderWriter_H
 #define TCPReaderWriter_H
 
-#include <wx/wx.h>
+#include "StdCompat.h"
 
-#if !defined(__WINDOWS__)
+// Platform socket headers.
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+#else
 #include <netdb.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -33,25 +38,45 @@
 #include <errno.h>
 #endif
 
+/*
+ * Thin wrapper around a blocking TCP client socket.
+ *
+ * open() resolves the remote hostname via CUDPReaderWriter::lookup(), creates
+ * a SOCK_STREAM socket, and calls connect().  TCP_NODELAY is set to avoid
+ * Nagle buffering delays on small control packets.
+ *
+ * read() uses select() with a caller-supplied timeout (seconds + milliseconds)
+ * so the caller can implement protocol-level timeouts without blocking forever.
+ * It returns the number of bytes received, 0 on timeout, or -1 on error.
+ *
+ * A default-constructed CTCPReaderWriter can be opened later by calling the
+ * two-argument open() overload, which also sets the address and port.
+ */
 class CTCPReaderWriter {
 public:
-	CTCPReaderWriter(const wxString& address, unsigned int port, const wxString& localAddress = wxEmptyString);
+	CTCPReaderWriter(const std::string& address, unsigned int port, const std::string& localAddress = std::string());
 	CTCPReaderWriter();
 	~CTCPReaderWriter();
 
-	bool open(const wxString& address, unsigned int port, const wxString& localAddress = wxEmptyString);
+	bool open(const std::string& address, unsigned int port, const std::string& localAddress = std::string());
 	bool open();
 
+	// Blocks until data arrives or the timeout (secs + msecs) expires.
+	// Returns bytes read, 0 on timeout, -1 on error.
 	int  read(unsigned char* buffer, unsigned int length, unsigned int secs, unsigned int msecs = 0U);
 	bool write(const unsigned char* buffer, unsigned int length);
 
 	void close();
 
 private:
-	wxString       m_address;
+	std::string    m_address;
 	unsigned short m_port;
-	wxString       m_localAddress;
+	std::string    m_localAddress;
+#if defined(_WIN32)
+	SOCKET         m_fd;
+#else
 	int            m_fd;
+#endif
 };
 
 #endif

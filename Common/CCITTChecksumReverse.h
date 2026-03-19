@@ -14,8 +14,17 @@
 #ifndef	CCITTChecksumReverse_H
 #define	CCITTChecksumReverse_H
 
-#include <wx/wx.h>
+#include <cstdint>
 
+/*
+ * CCITT-16 checksum with reversed bit order, as required by the D-Star
+ * radio header format and the DSRP network protocol.
+ *
+ * The API is identical to CCCITTChecksum; only the polynomial bit ordering
+ * differs.  This variant is used whenever a checksum is appended to or
+ * verified in a D-Star header (CHeaderData, DSRP header packets, .dvtool
+ * file headers, slow-data header blocks).
+ */
 class CCCITTChecksumReverse {
 public:
 	CCCITTChecksumReverse();
@@ -31,8 +40,8 @@ public:
 
 private:
 	union {
-		wxUint16 m_crc16;
-		wxUint8  m_crc8[2U];
+		uint16_t m_crc16;
+		uint8_t  m_crc8[2U];
 	};
 };
 

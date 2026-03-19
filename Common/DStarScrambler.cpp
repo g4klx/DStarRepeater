@@ -13,7 +13,7 @@
 
 #include "DStarScrambler.h"
 
-#include <wx/wx.h>
+#include <cassert>
 
 static const bool SCRAMBLER_TABLE_BITS[] = {
 	false, false, false, false, true,  true,  true,  false, true,  true,  true,  true,  false, false, true,  false,
@@ -22,9 +22,9 @@ static const bool SCRAMBLER_TABLE_BITS[] = {
 	true,  false, true,  true,  false, true,  true,  false, false, false, false, false, true,  true,  false, false,
 	true,  true,  false, true,  false, true,  false, false, true,  true,  true,  false, false, true,  true,  true,
 	true,  false, true,  true,  false, true,  false, false, false, false, true,  false, true,  false, true,  false,
-	true,  true,  true,  true,  true,  false, true,  false, false, true,  false, true,  false, false, false, true, 
+	true,  true,  true,  true,  true,  false, true,  false, false, true,  false, true,  false, false, false, true,
 	true,  false, true,  true,  true,  false, false, false, true,  true,  true,  true,  true,  true,  true,  false,
-	false, false, false, true,  true,  true,  false, true,  true,  true,  true,  false, false, true,  false, true, 
+	false, false, false, true,  true,  true,  false, true,  true,  true,  true,  false, false, true,  false, true,
 	true,  false, false, true,  false, false, true,  false, false, false, false, false, false, true,  false, false,
 	false, true,  false, false, true,  true,  false, false, false, true,  false, true,  true,  true,  false, true,
 	false, true,  true,  false, true,  true,  false, false, false, false, false, true,  true,  false, false, true,
@@ -85,7 +85,7 @@ CDStarScrambler::~CDStarScrambler()
 
 void CDStarScrambler::process(bool* inOut, unsigned int length)
 {
-	wxASSERT(inOut != 0);
+	assert(inOut != nullptr);
 
 	for (unsigned int i = 0U; i < length; i++) {
 		inOut[i] ^= SCRAMBLER_TABLE_BITS[m_count++];
@@ -97,8 +97,8 @@ void CDStarScrambler::process(bool* inOut, unsigned int length)
 
 void CDStarScrambler::process(const bool* in, bool* out, unsigned int length)
 {
-	wxASSERT(in != 0);
-	wxASSERT(out != 0);
+	assert(in != nullptr);
+	assert(out != nullptr);
 
 	for (unsigned int i = 0U; i < length; i++) {
 		out[i] = in[i] ^ SCRAMBLER_TABLE_BITS[m_count++];
@@ -110,7 +110,7 @@ void CDStarScrambler::process(const bool* in, bool* out, unsigned int length)
 
 void CDStarScrambler::process(unsigned char* inOut, unsigned int length)
 {
-	wxASSERT(inOut != 0);
+	assert(inOut != nullptr);
 
 	for (unsigned int i = 0U; i < length; i++) {
 		inOut[i] ^= SCRAMBLER_TABLE_BYTES[m_count++];
@@ -122,8 +122,8 @@ void CDStarScrambler::process(unsigned char* inOut, unsigned int length)
 
 void CDStarScrambler::process(const unsigned char* in, unsigned char* out, unsigned int length)
 {
-	wxASSERT(in != 0);
-	wxASSERT(out != 0);
+	assert(in != nullptr);
+	assert(out != nullptr);
 
 	for (unsigned int i = 0U; i < length; i++) {
 		out[i] = in[i] ^ SCRAMBLER_TABLE_BYTES[m_count++];

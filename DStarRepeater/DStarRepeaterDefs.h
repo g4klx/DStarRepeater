@@ -16,24 +16,23 @@
  *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+// Application-level constants for the D-Star Repeater daemon.
+// The config file path is now supplied as a required command-line argument
+// rather than being constructed from compile-time macros.
+
 #ifndef	DStarRepeaterDefs_H
 #define	DStarRepeaterDefs_H
 
-#include <wx/wx.h>
+#include "StdCompat.h"
 
-const wxString APPLICATION_NAME = wxT("D-Star Repeater");
-const wxString CONFIG_FILE_NAME = wxT("dstarrepeater");
+inline const std::string APPLICATION_NAME = "D-Star Repeater";
 
-const wxString PRIMARY_WHITELIST_FILE_NAME   = wxT("rptr_whitelist.dat");
-const wxString SECONDARY_WHITELIST_FILE_NAME = wxT("whitelist.dat");
-const wxString PRIMARY_BLACKLIST_FILE_NAME   = wxT("rptr_blacklist.dat");
-const wxString SECONDARY_BLACKLIST_FILE_NAME = wxT("blacklist.dat");
-const wxString GREYLIST_FILE_NAME            = wxT("greylist.dat");
-
+// Per-frame receive state machine used inside the repeater thread to parse the
+// incoming bit stream once a valid header has been detected.
 enum DSTAR_RX_STATE {
-	DSRXS_LISTENING,
-	DSRXS_PROCESS_DATA,
-	DSRXS_PROCESS_SLOW_DATA
+	DSRXS_LISTENING,        // Waiting for a DATA_SYNC pattern
+	DSRXS_PROCESS_DATA,     // Consuming DV frame payload bytes
+	DSRXS_PROCESS_SLOW_DATA // Decoding the 3-byte slow-data section of a frame
 };
 
 #endif

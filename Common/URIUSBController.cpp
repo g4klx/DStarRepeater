@@ -13,6 +13,11 @@
 
 #include "URIUSBController.h"
 
+#include <cassert>
+#include <cstdio>
+
+#if !defined(_WIN32)
+
 const unsigned int C108_VENDOR_ID     = 0x0D8CU;
 const unsigned int C108_PRODUCT_ID    = 0x000CU;
 const unsigned int C108AH_PRODUCT_ID  = 0x013CU;
@@ -34,194 +39,6 @@ const char HID_IR0_PM    = 0x04;	// Playback-Mute, Battery
 const char HID_IR0_VD    = 0x02;	// Volume-Down, COR_DET
 const char HID_IR0_VU    = 0x01;	// Volume-Up, CTCSS_DET
 
-#if defined(__WINDOWS__)
-
-#include <Setupapi.h>
-#include <hidsdi.h>
-
-const ULONG USB_BUFSIZE = 5UL;
-
-CURIUSBController::CURIUSBController(unsigned int address, bool checkInput) :
-m_address(address),
-m_checkInput(checkInput),
-m_outp1(false),
-m_outp3(false),
-m_outp5(false),
-m_outp6(false),
-m_handle(INVALID_HANDLE_VALUE)
-{
-}
-
-CURIUSBController::~CURIUSBController()
-{
-}
-
-bool CURIUSBController::open()
-{
-	wxASSERT(m_handle == INVALID_HANDLE_VALUE);
-
-	GUID guid;
-	::HidD_GetHidGuid(&guid);
-
-	HDEVINFO devInfo = ::SetupDiGetClassDevs(&guid, NULL, NULL, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
-	if (devInfo == INVALID_HANDLE_VALUE) {
-		wxLogError(wxT("Error from SetupDiGetClassDevs: err=%u"), ::GetLastError());
-		return false;
-	}
-
-	SP_DEVICE_INTERFACE_DATA devInfoData;
-	devInfoData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
-
-	unsigned int count = 0U;
-	for (DWORD index = 0U; ::SetupDiEnumDeviceInterfaces(devInfo, NULL, &guid, index, &devInfoData); index++) {
-		// Find the required length of the device structure
-		DWORD length;
-		::SetupDiGetDeviceInterfaceDetail(devInfo, &devInfoData, NULL, 0U, &length, NULL);
-
-		PSP_DEVICE_INTERFACE_DETAIL_DATA detailData = PSP_DEVICE_INTERFACE_DETAIL_DATA(::malloc(length));
-		detailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
-
-		// Get the detailed data into the newly allocated device structure
-		DWORD required;
-		BOOL res = ::SetupDiGetDeviceInterfaceDetail(devInfo, &devInfoData, detailData, length, &required, NULL);
-		if (!res) {
-			wxLogError(wxT("Error from SetupDiGetDeviceInterfaceDetail: err=%u"), ::GetLastError());
-			::SetupDiDestroyDeviceInfoList(devInfo);
-			::free(detailData);
-			return false;
-		}
-
-		// Get the handle for getting the attributes
-		HANDLE handle = ::CreateFile(detailData->DevicePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-		if (handle == INVALID_HANDLE_VALUE) {
-			wxLogError(wxT("Error from CreateFile: err=%u"), ::GetLastError());
-			::SetupDiDestroyDeviceInfoList(devInfo);
-			::free(detailData);
-			return false;
-		}
-
-		HIDD_ATTRIBUTES attributes;
-		attributes.Size = sizeof(HIDD_ATTRIBUTES);
-		res = ::HidD_GetAttributes(handle, &attributes);
-		if (!res) {
-			wxLogError(wxT("Error from HidD_GetAttributes: err=%u"), ::GetLastError());
-			::CloseHandle(handle);
-			::SetupDiDestroyDeviceInfoList(devInfo);
-			::free(detailData);
-			return false;
-		}
-
-		::CloseHandle(handle);
-
-		// Is this a CM108 or equivalent?
-		if (attributes.VendorID  == C108_VENDOR_ID    &&
-		   (attributes.ProductID == C108_PRODUCT_ID   ||
-			attributes.ProductID == C108AH_PRODUCT_ID ||
-			attributes.ProductID == C119_PRODUCT_ID   ||
-			attributes.ProductID == C119A_PRODUCT_ID)) {
-				count++;
-
-			// Is this the right device?
-			if (count == m_address) {
-				m_handle = ::CreateFile(detailData->DevicePath, GENERIC_WRITE | GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-				if (m_handle == INVALID_HANDLE_VALUE) {
-					wxLogError(wxT("Error from CreateFile: err=%u"), ::GetLastError());
-					::SetupDiDestroyDeviceInfoList(devInfo);
-					::free(detailData);
-					return false;
-				}
-
-				::SetupDiDestroyDeviceInfoList(devInfo);
-				::free(detailData);
-
-				setDigitalOutputs(false, false, false, false, false, false, false, false);
-
-				return true;
-			}
-		}
-
-		::free(detailData);
-	}
-
-	::SetupDiDestroyDeviceInfoList(devInfo);
-
-	return false;
-}
-
-void CURIUSBController::getDigitalInputs(bool& inp1, bool& inp2, bool& inp3, bool& inp4, bool& inp5)
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-
-	if (!m_checkInput) {
-		inp1 = inp2 = inp3 = inp4 = inp5 = false;
-		return;
-	}
-
-	char buffer[USB_BUFSIZE];
-	buffer[0] = REPORT_ID;
-	buffer[1] = 0x00;
-	buffer[2] = 0x00;
-	buffer[3] = 0x00;
-	buffer[4] = 0x00;
-	BOOL res = ::HidD_GetInputReport(m_handle, buffer, USB_BUFSIZE);
-	if (!res) {
-		wxLogError(wxT("Error from HidD_GetInputReport: err=%u"), ::GetLastError());
-		return;
-	}
-
-	inp3 = false;
-
-	inp5 = (buffer[1] & HID_IR0_RM) == HID_IR0_RM;	// Disable
-	inp4 = (buffer[1] & HID_IR0_PM) == HID_IR0_PM;	// Battery
-	inp2 = (buffer[1] & HID_IR0_VU) == HID_IR0_VU;	// Squelch 2
-	inp1 = (buffer[1] & HID_IR0_VD) == HID_IR0_VD;	// Squelch 1
-}
-
-void CURIUSBController::setDigitalOutputs(bool outp1, bool, bool outp3, bool outp4, bool outp5, bool outp6, bool, bool)
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-
-	if (outp1 == m_outp1 && outp3 == m_outp3 && outp5 == m_outp5 && outp6 == m_outp6)
-		return;
-
-	char buffer[USB_BUFSIZE];
-	buffer[0] = REPORT_ID;
-	buffer[1] = HID_OR0;
-	buffer[2] = HID_OR1;
-	buffer[3] = HID_OR2;
-	buffer[4] = HID_OR3;
-
-	if (outp1)			// Transmit
-		buffer[2] |= HID_OR1_GPIO3;
-	if (outp3)			// Heartbeat
-		buffer[2] |= HID_OR1_GPIO1;
-	if (outp4)			// Active
-		buffer[2] |= HID_OR1_GPIO2;
-	if (outp5)			// Output 1
-		buffer[2] |= HID_OR1_GPIO4;
-
-	BOOL res = ::HidD_SetOutputReport(m_handle, buffer, USB_BUFSIZE);
-	if (!res)
-		wxLogError(wxT("Error from HidD_SetOutputReport: err=%u"), ::GetLastError());
-
-	m_outp1 = outp1;
-	m_outp3 = outp3;
-	m_outp5 = outp5;
-	m_outp6 = outp6;
-}
-
-void CURIUSBController::close()
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-
-	setDigitalOutputs(false, false, false, false, false, false, false, false);
-
-	::CloseHandle(m_handle);
-	m_handle = INVALID_HANDLE_VALUE;
-}
-
-#else
-
 const unsigned int C108_HID_INTERFACE = 3U;
 
 const unsigned int HID_REPORT_GET = 0x01U;
@@ -241,28 +58,28 @@ m_outp1(false),
 m_outp3(false),
 m_outp5(false),
 m_outp6(false),
-m_context(NULL),
-m_handle(NULL)
+m_context(nullptr),
+m_handle(nullptr)
 {
 	::libusb_init(&m_context);
 }
 
 CURIUSBController::~CURIUSBController()
 {
-	wxASSERT(m_context != NULL);
+	assert(m_context != nullptr);
 
 	::libusb_exit(m_context);
 }
 
 bool CURIUSBController::open()
 {
-	wxASSERT(m_context != NULL);
-	wxASSERT(m_handle == NULL);
+	assert(m_context != nullptr);
+	assert(m_handle == nullptr);
 
 	libusb_device** list;
-	ssize_t cnt = ::libusb_get_device_list(NULL, &list);
+	ssize_t cnt = ::libusb_get_device_list(nullptr, &list);
 	if (cnt <= 0) {
-		wxLogError(wxT("Cannot find any USB devices!"));
+		::fprintf(stderr, "Cannot find any USB devices!\n");
 		return false;
 	}
 
@@ -290,13 +107,13 @@ bool CURIUSBController::open()
 	}
 
 	if (err != 0) {
-		wxLogError(wxT("libusb_open failed, err=%d"), err);
+		::fprintf(stderr, "libusb_open failed, err=%d\n", err);
 		::libusb_free_device_list(list, 1);
 		return false;
 	}
 
-	if (m_handle == NULL) {
-		wxLogError(wxT("Could not find a suitable CM108 based device"));
+	if (m_handle == nullptr) {
+		::fprintf(stderr, "Could not find a suitable CM108 based device\n");
 		::libusb_free_device_list(list, 1);
 		return false;
 	}
@@ -307,17 +124,17 @@ bool CURIUSBController::open()
 	if (res != 0) {
 		res = ::libusb_detach_kernel_driver(m_handle, C108_HID_INTERFACE);
 		if (res != 0) {
-			wxLogError(wxT("libusb_detach_kernel_driver failed, err=%d"), res);
+			::fprintf(stderr, "libusb_detach_kernel_driver failed, err=%d\n", res);
 			::libusb_close(m_handle);
-			m_handle = NULL;
+			m_handle = nullptr;
 			return false;
 		}
 
 		res = ::libusb_claim_interface(m_handle, C108_HID_INTERFACE);
 		if (res != 0) {
-			wxLogError(wxT("libusb_claim_interface failed, err=%d"), res);
+			::fprintf(stderr, "libusb_claim_interface failed, err=%d\n", res);
 			::libusb_close(m_handle);
-			m_handle = NULL;
+			m_handle = nullptr;
 			return false;
 		}
 	}
@@ -329,7 +146,7 @@ bool CURIUSBController::open()
 
 void CURIUSBController::getDigitalInputs(bool& inp1, bool& inp2, bool& inp3, bool& inp4, bool& inp5)
 {
-	wxASSERT(m_handle != NULL);
+	assert(m_handle != nullptr);
 
 	if (!m_checkInput) {
 		inp1 = inp2 = inp3 = inp4 = inp5 = false;
@@ -343,7 +160,7 @@ void CURIUSBController::getDigitalInputs(bool& inp1, bool& inp2, bool& inp3, boo
 	buffer[3] = 0x00;
 	int res = ::libusb_control_transfer(m_handle, LIBUSB_ENDPOINT_IN + LIBUSB_REQUEST_TYPE_CLASS + LIBUSB_RECIPIENT_INTERFACE, HID_REPORT_GET, REPORT_ID + (HID_RT_INPUT << 8), C108_HID_INTERFACE, buffer, USB_BUFSIZE, USB_TIMEOUT);
 	if (res < 0) {
-		wxLogError(wxT("Error from libusb_control_transfer: err=%d"), res);
+		::fprintf(stderr, "Error from libusb_control_transfer: err=%d\n", res);
 		return;
 	}
 
@@ -360,7 +177,7 @@ void CURIUSBController::getDigitalInputs(bool& inp1, bool& inp2, bool& inp3, boo
 
 void CURIUSBController::setDigitalOutputs(bool outp1, bool, bool outp3, bool outp4, bool outp5, bool outp6, bool, bool)
 {
-	wxASSERT(m_handle != NULL);
+	assert(m_handle != nullptr);
 
 	if (outp1 == m_outp1 && outp3 == m_outp3 && outp5 == m_outp5 && outp6 == m_outp6)
 		return;
@@ -382,7 +199,7 @@ void CURIUSBController::setDigitalOutputs(bool outp1, bool, bool outp3, bool out
 
 	int res = ::libusb_control_transfer(m_handle, LIBUSB_ENDPOINT_OUT + LIBUSB_REQUEST_TYPE_CLASS + LIBUSB_RECIPIENT_INTERFACE, HID_REPORT_SET, REPORT_ID + (HID_RT_OUTPUT << 8), C108_HID_INTERFACE, buffer, USB_BUFSIZE, USB_TIMEOUT);
 	if (res < 0) {
-		wxLogError(wxT("Error from libusb_control_transfer: err=%d"), res);
+		::fprintf(stderr, "Error from libusb_control_transfer: err=%d\n", res);
 		return;
 	}
 
@@ -397,15 +214,47 @@ void CURIUSBController::setDigitalOutputs(bool outp1, bool, bool outp3, bool out
 
 void CURIUSBController::close()
 {
-	wxASSERT(m_handle != NULL);
+	assert(m_handle != nullptr);
 
 	setDigitalOutputs(false, false, false, false, false, false, false, false);
 
 	::libusb_release_interface(m_handle, C108_HID_INTERFACE);
 
 	::libusb_close(m_handle);
-	m_handle = NULL;
+	m_handle = nullptr;
+}
+
+#else
+
+// Windows stub implementation
+
+CURIUSBController::CURIUSBController(unsigned int address, bool checkInput) :
+m_address(address),
+m_checkInput(checkInput)
+{
+}
+
+CURIUSBController::~CURIUSBController()
+{
+}
+
+bool CURIUSBController::open()
+{
+	::fprintf(stderr, "K8055 not supported on Windows without Velleman DLL\n");
+	return false;
+}
+
+void CURIUSBController::getDigitalInputs(bool& inp1, bool& inp2, bool& inp3, bool& inp4, bool& inp5)
+{
+	inp1 = inp2 = inp3 = inp4 = inp5 = false;
+}
+
+void CURIUSBController::setDigitalOutputs(bool, bool, bool, bool, bool, bool, bool, bool)
+{
+}
+
+void CURIUSBController::close()
+{
 }
 
 #endif
-

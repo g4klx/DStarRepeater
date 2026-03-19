@@ -16,6 +16,8 @@
 
 #include "HeaderData.h"
 
+// Callback interface implemented by the repeater thread.
+// CAnnouncementUnit calls these to key up the transmitter and push announcement DV frames.
 class IAnnouncementCallback {
 public:
 	virtual void transmitAnnouncementHeader(CHeaderData* header) = 0;

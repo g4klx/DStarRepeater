@@ -19,72 +19,16 @@
 #ifndef	DStarRepeaterApp_H
 #define	DStarRepeaterApp_H
 
-#include <wx/wx.h>
-#include <wx/snglinst.h>
-
 #include "DStarRepeaterThread.h"
-#include "DStarRepeaterStatusData.h"
 #include "DStarRepeaterConfig.h"
-#if (wxUSE_GUI == 1)
-#include "DStarRepeaterFrame.h"
-#endif
 #include "DStarRepeaterDefs.h"
 
-wxDECLARE_EVENT(wxEVT_THREAD_COMMAND, wxThreadEvent);
-
-class CDStarRepeaterApp : public wxApp {
-public:
-	CDStarRepeaterApp();
-	virtual ~CDStarRepeaterApp();
-
-	virtual bool OnInit();
-	virtual int  OnExit();
-
-	virtual void OnInitCmdLine(wxCmdLineParser& parser);
-	virtual bool OnCmdLineParsed(wxCmdLineParser& parser);
-
-	// This is overridden because dialog boxes from threads are bad news
-#if defined(__WXDEBUG__)
-	virtual void OnAssertFailure(const wxChar* file, int line, const wxChar* func, const wxChar* cond, const wxChar* msg);
-#endif
-
-	virtual CDStarRepeaterStatusData* getStatus() const;
-
-	virtual void showLog(const wxString& text);
-
-	virtual void setOutputs(bool out1, bool out2, bool out3, bool out4);
-
-	virtual void setLogging(bool logging);
-
-	virtual void setPosition(int x, int y);
-
-	void startup();
-	void shutdown();
-
-private:
-#if (wxUSE_GUI == 1)
-	CDStarRepeaterFrame*        m_frame;
-#endif
-
-	wxString                    m_name;
-	bool                        m_nolog;
-	bool                        m_gui;
-	wxString                    m_logDir;
-	wxString                    m_confDir;
-	wxString                    m_audioDir;
-	IDStarRepeaterThread*       m_thread;
-	CDStarRepeaterConfig*       m_config;
-	wxSingleInstanceChecker*    m_checker;
-	wxLogChain*                 m_logChain;
-	wxString                    m_commandLine[6];
-
-	void createThread();
-
-	void OnRemoteCmd(wxThreadEvent& event);
-
-	wxDECLARE_EVENT_TABLE();
-};
-
-wxDECLARE_APP(CDStarRepeaterApp);
+// Creates the repeater thread based on the configured mode, attaches all
+// subsystems (modem, controller, lists, etc.) and launches it.  Returns the
+// newly allocated thread on success, or nullptr on failure (caller owns the
+// pointer and must join/delete it on exit).
+IDStarRepeaterThread* createThread(CDStarRepeaterConfig* config,
+                                   const std::string&    audioDir,
+                                   std::string           commandLine[6]);
 
 #endif

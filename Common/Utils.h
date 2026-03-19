@@ -14,7 +14,7 @@
 #ifndef	Utils_H
 #define	Utils_H
 
-#include <wx/wx.h>
+#include "StdCompat.h"
 
 enum TRISTATE {
 	STATE_FALSE,
@@ -22,9 +22,17 @@ enum TRISTATE {
 	STATE_UNKNOWN
 };
 
+/*
+ * General utility class.
+ *
+ * Currently contains only dump(), a hex-dump helper used throughout the
+ * codebase to print raw protocol bytes to stdout for debugging.  Output
+ * format is classic hex+ASCII: 16 bytes per line, address on the left,
+ * printable characters on the right.
+ */
 class CUtils {
 public:
-	static void dump(const wxChar* title, const unsigned char* data, unsigned int length);
+	static void dump(const char* title, const unsigned char* data, unsigned int length);
 
 private:
 };

@@ -21,198 +21,248 @@
 
 #include "DStarDefines.h"
 
-#include <wx/wx.h>
-#include <wx/config.h>
-#include <wx/filename.h>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
+/*
+ * Parses the INI-style repeater configuration file.
+ *
+ * File format (MMDVMHost compatible):
+ *   [Section] headers
+ *   Key=Value pairs
+ *   # comment lines
+ *
+ * The constructor takes the full path to the config file and throws
+ * std::runtime_error if the file does not exist or cannot be opened.
+ * There is no write-back facility; this class is read-only.
+ *
+ * Settings are grouped into logical sections exposed via typed getters.
+ * Every getter reads all fields for that group atomically (all by
+ * out-reference).
+ */
 class CDStarRepeaterConfig {
 public:
-#if defined(__WINDOWS__)
-	CDStarRepeaterConfig(wxConfigBase* config, const wxString& dir, const wxString& configName, const wxString& name);
-#else
-	CDStarRepeaterConfig(const wxString& dir, const wxString& configName, const wxString& name, const bool mustExist=false);
-#endif
+	/*
+	 * Opens and parses filePath.  Throws std::runtime_error if the file
+	 * does not exist or cannot be opened.  All members are initialised to
+	 * built-in defaults before parsing, so any key absent from the file
+	 * silently retains its default value.
+	 */
+	explicit CDStarRepeaterConfig(const std::string& filePath);
 	~CDStarRepeaterConfig();
 
-	void getCallsign(wxString& callsign, wxString& gateway, DSTAR_MODE& mode, ACK_TYPE& ack, bool& restriction, bool& rpt1Validation, bool& dtmfBlanking, bool& errorReply) const;
-	void setCallsign(const wxString& callsign, const wxString& gateway, DSTAR_MODE mode, ACK_TYPE ack, bool restriction, bool rpt1Validation, bool dtmfBlanking, bool errorReply);
+	// [General]
+	void getCallsign(std::string& callsign, std::string& gateway, DSTAR_MODE& mode, ACK_TYPE& ack, bool& restriction, bool& rpt1Validation, bool& dtmfBlanking, bool& errorReply) const;
 
-	void getNetwork(wxString& gatewayAddress, unsigned int& gatewayPort, wxString& localAddress, unsigned int& localPort, wxString& name) const;
-	void setNetwork(const wxString& gatewayAddress, unsigned int gatewayPort, const wxString& localAddress, unsigned int localPort, const wxString& name);
+	// [Log]
+	void getLog(std::string& filePath, unsigned int& fileLevel, unsigned int& displayLevel, unsigned int& mqttLevel) const;
 
-	void getModem(wxString& type) const;
-	void setModem(const wxString& type);
+	// [Paths]
+	void getPaths(std::string& dataDir, std::string& audioDir) const;
 
+	// [Network]
+	void getNetwork(std::string& gatewayAddress, unsigned int& gatewayPort, std::string& localAddress, unsigned int& localPort, std::string& name) const;
+
+	// [Modem]
+	void getModem(std::string& type) const;
+
+	// [Times]
 	void getTimes(unsigned int& timeout, unsigned int& ackTime) const;
-	void setTimes(unsigned int timeout, unsigned int ackTime);
 
-	void getBeacon(unsigned int& time, wxString& text, bool& voice, TEXT_LANG& language) const;
-	void setBeacon(unsigned int time, const wxString& text, bool voice, TEXT_LANG language);
+	// [Beacon]
+	void getBeacon(unsigned int& time, std::string& text, bool& voice, TEXT_LANG& language) const;
 
-	void getAnnouncement(bool& enabled, unsigned int& time, wxString& recordRPT1, wxString& recordRPT2, wxString& deleteRPT1, wxString& deleteRPT2) const;
-	void setAnnouncement(bool enabled, unsigned int time, const wxString& recordRPT1, const wxString& recordRPT2, const wxString& deleteRPT1, const wxString& deleteRPT2);
+	// [Announcement]
+	void getAnnouncement(bool& enabled, unsigned int& time, std::string& recordRPT1, std::string& recordRPT2, std::string& deleteRPT1, std::string& deleteRPT2) const;
 
-	void getControl(bool& enabled, wxString& rpt1Callsign, wxString& rpt2Callsign, wxString& shutdown, wxString& startup, wxString& status1, wxString& status2, wxString& status3, wxString& status4, wxString& status5, wxString& command1, wxString& command1Line, wxString& command2, wxString& command2Line, wxString& command5, wxString& command5Line, wxString& command6, wxString& command6Line, wxString& command3, wxString& command3Line, wxString& command4, wxString& command4Line, wxString& output1, wxString& output2, wxString& output3, wxString& output4) const;
+	// [Control]
+	void getControl(bool& enabled, std::string& rpt1Callsign, std::string& rpt2Callsign, std::string& shutdown, std::string& startup, std::string& status1, std::string& status2, std::string& status3, std::string& status4, std::string& status5, std::string& command1, std::string& command1Line, std::string& command2, std::string& command2Line, std::string& command3, std::string& command3Line, std::string& command4, std::string& command4Line, std::string& command5, std::string& command5Line, std::string& command6, std::string& command6Line, std::string& output1, std::string& output2, std::string& output3, std::string& output4) const;
 
-	void setControl(bool enabled, const wxString& rpt1Callsign, const wxString& rpt2Callsign, const wxString& shutdown, const wxString& startup, const wxString& status1, const wxString& status2, const wxString& status3, const wxString& status4, const wxString& status5, const wxString& command1, const wxString& command1Line, const wxString& command2, const wxString& command2Line, const wxString& command3, const wxString& command3Line, const wxString& command4, const wxString& command4Line, const wxString& command5, const wxString& command5Line, const wxString& command6, const wxString& command6Line, const wxString& output1, const wxString& output2, const wxString& output3, const wxString& output4);
+	// [Controller]
+	void getController(std::string& type, unsigned int& serialConfig, bool& pttInvert, unsigned int& activeHangTime) const;
 
-	void getController(wxString& type, unsigned int& serialConfig, bool& pttInvert, unsigned int& activeHangTime) const;
-	void setController(const wxString& type, unsigned int serialConfig, bool pttInvert, unsigned int activeHangTime);
-
+	// [Outputs]
 	void getOutputs(bool& out1, bool& out2, bool& out3, bool& out4) const;
-	void setOutputs(bool out1, bool out2, bool out3, bool out4);
 
+	// [Frame Logging]
 	void getLogging(bool& logging) const;
-	void setLogging(bool logging);
 
-	void getPosition(int& x, int& y) const;
-	void setPosition(int x, int y);
+	// [Whitelist] / [Blacklist] / [Greylist]  (empty string = not configured)
+	void getWhitelist(std::string& file) const;
+	void getBlacklist(std::string& file) const;
+	void getGreylist(std::string& file) const;
 
-	void getDVAP(wxString& port, unsigned int& frequency, int& power, int& squelch) const;
-	void setDVAP(const wxString& port, unsigned int frequency, int power, int squelch);
+	// [DVAP]
+	void getDVAP(std::string& port, unsigned int& frequency, int& power, int& squelch) const;
 
+	// [GMSK]
 	void getGMSK(USB_INTERFACE& type, unsigned int& address) const;
-	void setGMSK(USB_INTERFACE type, unsigned int address);
 
-	void getDVRPTR1(wxString& port, bool& rxInvert, bool& txInvert, bool& channel, unsigned int& modLevel, unsigned int& txDelay) const;
-	void setDVRPTR1(const wxString& port, bool rxInvert, bool txInvert, bool channel, unsigned int modLevel, unsigned int txDelay);
+	// [DV-RPTR V1]
+	void getDVRPTR1(std::string& port, bool& rxInvert, bool& txInvert, bool& channel, unsigned int& modLevel, unsigned int& txDelay) const;
 
-	void getDVRPTR2(CONNECTION_TYPE& connectionType, wxString& usbPort, wxString& address, unsigned int& port, bool& txInvert, unsigned int& modLevel, unsigned int& txDelay) const;
-	void setDVRPTR2(CONNECTION_TYPE connectionType, const wxString& usbPort, const wxString& address, unsigned int port, bool txInvert, unsigned int modLevel, unsigned int txDelay);
+	// [DV-RPTR V2]
+	void getDVRPTR2(CONNECTION_TYPE& connectionType, std::string& usbPort, std::string& address, unsigned int& port, bool& txInvert, unsigned int& modLevel, unsigned int& txDelay) const;
 
-	void getDVRPTR3(CONNECTION_TYPE& connectionType, wxString& usbPort, wxString& address, unsigned int& port, bool& txInvert, unsigned int& modLevel, unsigned int& txDelay) const;
-	void setDVRPTR3(CONNECTION_TYPE connectionType, const wxString& usbPort, const wxString& address, unsigned int port, bool txInvert, unsigned int modLevel, unsigned int txDelay);
+	// [DV-RPTR V3]
+	void getDVRPTR3(CONNECTION_TYPE& connectionType, std::string& usbPort, std::string& address, unsigned int& port, bool& txInvert, unsigned int& modLevel, unsigned int& txDelay) const;
 
-	void getDVMEGA(wxString& port, DVMEGA_VARIANT& variant, bool& rxInvert, bool& txInvert, unsigned int& txDelay, unsigned int& rxFrequency, unsigned int& txFrequency, unsigned int& power) const;
-	void setDVMEGA(const wxString& port, DVMEGA_VARIANT variant, bool rxInvert, bool txInvert, unsigned int txDelay, unsigned int rxFrequency, unsigned int txFrequency, unsigned int power);
+	// [DVMEGA]
+	void getDVMEGA(std::string& port, DVMEGA_VARIANT& variant, bool& rxInvert, bool& txInvert, unsigned int& txDelay, unsigned int& rxFrequency, unsigned int& txFrequency, unsigned int& power) const;
 
-	void getMMDVM(wxString& port, bool& rxInvert, bool& txInvert, bool& pttInvert, unsigned int& txDelay, unsigned int& rxLevel, unsigned int& txLevel) const;
-	void setMMDVM(const wxString& port, bool rxInvert, bool txInvert, bool pttInvert, unsigned int txDelay, unsigned int rxLevel, unsigned int txLevel);
+	// [MMDVM]
+	void getMMDVM(std::string& port, bool& rxInvert, bool& txInvert, bool& pttInvert, unsigned int& txDelay, unsigned int& rxLevel, unsigned int& txLevel) const;
 
-	void getSoundCard(wxString& rxDevice, wxString& txDevice, bool& rxInvert, bool& txInvert, wxFloat32& rxLevel, wxFloat32& txLevel, unsigned int& txDelay, unsigned int& txTail) const;
-	void setSoundCard(const wxString& rxDevice, const wxString& txDevice, bool rxInvert, bool txInvert, wxFloat32 rxLevel, wxFloat32 txLevel, unsigned int txDelay, unsigned int txTail);
+	// [Sound Card]
+	void getSoundCard(std::string& rxDevice, std::string& txDevice, bool& rxInvert, bool& txInvert, float& rxLevel, float& txLevel, unsigned int& txDelay, unsigned int& txTail) const;
 
-	void getSplit(wxString& localAddress, unsigned int& localPort, wxArrayString& transmitterNames, wxArrayString& receiverNames, unsigned int& timeout) const;
-	void setSplit(const wxString& localAddress, unsigned int localPort, const wxArrayString& transmitterNames, const wxArrayString& receiverNames, unsigned int timeout);
+	// [Split]
+	void getSplit(std::string& localAddress, unsigned int& localPort, std::vector<std::string>& transmitterNames, std::vector<std::string>& receiverNames, unsigned int& timeout) const;
 
-	void getIcom(wxString& port) const;
-	void setIcom(const wxString& port);
+	// [Icom]
+	void getIcom(std::string& port) const;
 
 #if defined(MQTT)
-	void getMQTT(wxString& host, unsigned int& port, bool& auth, wxString& username, wxString& password, unsigned int& keepalive, wxString& name) const;
-	void setMQTT(const wxString& host, unsigned int port, bool auth, const wxString& username, const wxString& password, unsigned int keepalive, const wxString& name);
+	// [MQTT]
+	void getMQTT(std::string& host, unsigned int& port, bool& auth, std::string& username, std::string& password, unsigned int& keepalive, std::string& name) const;
 #endif
-
-	bool write();
 
 private:
-#if defined(__WINDOWS__)
-	wxConfigBase* m_config;
-	wxString      m_name;
-#endif
-	wxFileName    m_fileName;
-	wxString      m_callsign;
-	wxString      m_gateway;
+	// [General]
+	std::string   m_callsign;
+	std::string   m_gateway;
 	DSTAR_MODE    m_mode;
 	ACK_TYPE      m_ack;
 	bool          m_restriction;
 	bool          m_rpt1Validation;
 	bool          m_dtmfBlanking;
 	bool          m_errorReply;
-	wxString      m_gatewayAddress;
+
+	// [Log]
+	std::string   m_logFilePath;
+	unsigned int  m_logFileLevel;
+	unsigned int  m_logDisplayLevel;
+	unsigned int  m_logMQTTLevel;
+
+	// [Paths]
+	std::string   m_dataDir;
+	std::string   m_audioDir;
+
+	// [Network]
+	std::string   m_gatewayAddress;
 	unsigned int  m_gatewayPort;
-	wxString      m_localAddress;
+	std::string   m_localAddress;
 	unsigned int  m_localPort;
-	wxString      m_networkName;
-	wxString      m_modemType;
+	std::string   m_networkName;
+
+	// [Modem]
+	std::string   m_modemType;
+
+	// [Times]
 	unsigned int  m_timeout;
 	unsigned int  m_ackTime;
+
+	// [Beacon]
 	unsigned int  m_beaconTime;
-	wxString      m_beaconText;
+	std::string   m_beaconText;
 	bool          m_beaconVoice;
 	TEXT_LANG     m_language;
+
+	// [Announcement]
 	bool          m_announcementEnabled;
 	unsigned int  m_announcementTime;
-	wxString      m_announcementRecordRPT1;
-	wxString      m_announcementRecordRPT2;
-	wxString      m_announcementDeleteRPT1;
-	wxString      m_announcementDeleteRPT2;
+	std::string   m_announcementRecordRPT1;
+	std::string   m_announcementRecordRPT2;
+	std::string   m_announcementDeleteRPT1;
+	std::string   m_announcementDeleteRPT2;
+
+	// [Control]
 	bool          m_controlEnabled;
-	wxString      m_controlRpt1Callsign;
-	wxString      m_controlRpt2Callsign;
-	wxString      m_controlShutdown;
-	wxString      m_controlStartup;
-	wxString      m_controlStatus1;
-	wxString      m_controlStatus2;
-	wxString      m_controlStatus3;
-	wxString      m_controlStatus4;
-	wxString      m_controlStatus5;
-	wxString      m_controlCommand1;
-	wxString      m_controlCommand1Line;
-	wxString      m_controlCommand2;
-	wxString      m_controlCommand2Line;
-	wxString      m_controlCommand3;
-	wxString      m_controlCommand3Line;
-	wxString      m_controlCommand4;
-	wxString      m_controlCommand4Line;
-	wxString      m_controlCommand5;
-	wxString      m_controlCommand5Line;
-	wxString      m_controlCommand6;
-	wxString      m_controlCommand6Line;
-	wxString      m_controlOutput1;
-	wxString      m_controlOutput2;
-	wxString      m_controlOutput3;
-	wxString      m_controlOutput4;
-	wxString      m_controllerType;
+	std::string   m_controlRpt1Callsign;
+	std::string   m_controlRpt2Callsign;
+	std::string   m_controlShutdown;
+	std::string   m_controlStartup;
+	std::string   m_controlStatus1;
+	std::string   m_controlStatus2;
+	std::string   m_controlStatus3;
+	std::string   m_controlStatus4;
+	std::string   m_controlStatus5;
+	std::string   m_controlCommand1;
+	std::string   m_controlCommand1Line;
+	std::string   m_controlCommand2;
+	std::string   m_controlCommand2Line;
+	std::string   m_controlCommand3;
+	std::string   m_controlCommand3Line;
+	std::string   m_controlCommand4;
+	std::string   m_controlCommand4Line;
+	std::string   m_controlCommand5;
+	std::string   m_controlCommand5Line;
+	std::string   m_controlCommand6;
+	std::string   m_controlCommand6Line;
+	std::string   m_controlOutput1;
+	std::string   m_controlOutput2;
+	std::string   m_controlOutput3;
+	std::string   m_controlOutput4;
+
+	// [Controller]
+	std::string   m_controllerType;
 	unsigned int  m_serialConfig;
 	bool          m_pttInvert;
 	unsigned int  m_activeHangTime;
+
+	// [Outputs]
 	bool          m_output1;
 	bool          m_output2;
 	bool          m_output3;
 	bool          m_output4;
-	bool          m_logging;
-	int           m_x;
-	int           m_y;
 
-	// DVAP
-	wxString      m_dvapPort;
+	// [Frame Logging]
+	bool          m_logging;
+
+	// [Whitelist] / [Blacklist] / [Greylist]  (empty = not configured)
+	std::string   m_whitelistFile;
+	std::string   m_blacklistFile;
+	std::string   m_greylistFile;
+
+	// [DVAP]
+	std::string   m_dvapPort;
 	unsigned int  m_dvapFrequency;
 	int           m_dvapPower;
 	int           m_dvapSquelch;
 
-	// GMSK
+	// [GMSK]
 	USB_INTERFACE m_gmskInterface;
 	unsigned int  m_gmskAddress;
 
-	// DV-RPTR 1
-	wxString      m_dvrptr1Port;
+	// [DV-RPTR V1]
+	std::string   m_dvrptr1Port;
 	bool          m_dvrptr1RXInvert;
 	bool          m_dvrptr1TXInvert;
 	bool          m_dvrptr1Channel;
 	unsigned int  m_dvrptr1ModLevel;
 	unsigned int  m_dvrptr1TXDelay;
 
-	// DV-RPTR 2
+	// [DV-RPTR V2]
 	CONNECTION_TYPE m_dvrptr2Connection;
-	wxString      m_dvrptr2USBPort;
-	wxString      m_dvrptr2Address;
+	std::string   m_dvrptr2USBPort;
+	std::string   m_dvrptr2Address;
 	unsigned int  m_dvrptr2Port;
 	bool          m_dvrptr2TXInvert;
 	unsigned int  m_dvrptr2ModLevel;
 	unsigned int  m_dvrptr2TXDelay;
 
-	// DV-RPTR 3
+	// [DV-RPTR V3]
 	CONNECTION_TYPE m_dvrptr3Connection;
-	wxString      m_dvrptr3USBPort;
-	wxString      m_dvrptr3Address;
+	std::string   m_dvrptr3USBPort;
+	std::string   m_dvrptr3Address;
 	unsigned int  m_dvrptr3Port;
 	bool          m_dvrptr3TXInvert;
 	unsigned int  m_dvrptr3ModLevel;
 	unsigned int  m_dvrptr3TXDelay;
 
-	// DVMEGA
-	wxString       m_dvmegaPort;
+	// [DVMEGA]
+	std::string    m_dvmegaPort;
 	DVMEGA_VARIANT m_dvmegaVariant;
 	bool           m_dvmegaRXInvert;
 	bool           m_dvmegaTXInvert;
@@ -221,8 +271,8 @@ private:
 	unsigned int   m_dvmegaTXFrequency;
 	unsigned int   m_dvmegaPower;
 
-	// MMDVM
-	wxString      m_mmdvmPort;
+	// [MMDVM]
+	std::string   m_mmdvmPort;
 	bool          m_mmdvmRXInvert;
 	bool          m_mmdvmTXInvert;
 	bool          m_mmdvmPTTInvert;
@@ -230,35 +280,35 @@ private:
 	unsigned int  m_mmdvmRXLevel;
 	unsigned int  m_mmdvmTXLevel;
 
-	// Sound Card
-	wxString      m_soundCardRXDevice;
-	wxString      m_soundCardTXDevice;
+	// [Sound Card]
+	std::string   m_soundCardRXDevice;
+	std::string   m_soundCardTXDevice;
 	bool          m_soundCardRXInvert;
 	bool          m_soundCardTXInvert;
-	wxFloat32     m_soundCardRXLevel;
-	wxFloat32     m_soundCardTXLevel;
+	float         m_soundCardRXLevel;
+	float         m_soundCardTXLevel;
 	unsigned int  m_soundCardTXDelay;
 	unsigned int  m_soundCardTXTail;
 
-	// Split
-	wxString      m_splitLocalAddress;
-	unsigned int  m_splitLocalPort;
-	wxArrayString m_splitTXNames;
-	wxArrayString m_splitRXNames;
-	unsigned int  m_splitTimeout;
+	// [Split]
+	std::string              m_splitLocalAddress;
+	unsigned int             m_splitLocalPort;
+	std::vector<std::string> m_splitTXNames;
+	std::vector<std::string> m_splitRXNames;
+	unsigned int             m_splitTimeout;
 
-	// Icom Access Point/Terminal Mode
-	wxString      m_icomPort;
+	// [Icom]
+	std::string   m_icomPort;
 
 #if defined(MQTT)
-	// MQTT
-	wxString      m_mqttHost;
+	// [MQTT]
+	std::string   m_mqttHost;
 	unsigned int  m_mqttPort;
 	bool          m_mqttAuth;
-	wxString      m_mqttUsername;
-	wxString      m_mqttPassword;
+	std::string   m_mqttUsername;
+	std::string   m_mqttPassword;
 	unsigned int  m_mqttKeepalive;
-	wxString      m_mqttName;
+	std::string   m_mqttName;
 #endif
 };
 

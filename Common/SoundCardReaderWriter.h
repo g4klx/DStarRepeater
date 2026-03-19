@@ -16,35 +16,64 @@
 #define	SoundCardReaderWriter_H
 
 #include "AudioCallback.h"
+#include "StdCompat.h"
 
-#include <wx/wx.h>
+#include <atomic>
+#include <vector>
 
-#if (defined(__APPLE__) && defined(__MACH__)) || defined(__WINDOWS__)
+/*
+ * CSoundCardReaderWriter - Platform-abstracted stereo audio I/O for the sound-card modem.
+ *
+ * Two implementations are selected at compile time:
+ *
+ *   PortAudio (Windows and macOS):
+ *     A single PaStream runs a combined input/output callback (CSoundCardReaderWriter::callback).
+ *     The callback receives captured samples and provides playback samples in the same
+ *     invocation, which gives the lowest latency on those platforms.
+ *     Device enumeration returns human-readable names from the PortAudio device list.
+ *
+ *   ALSA (Linux):
+ *     Separate CSoundCardReader and CSoundCardWriter objects each own an ALSA PCM handle
+ *     and run in dedicated threads (Reader::entry() / Writer::entry()).
+ *     The reader thread calls IAudioCallback::readCallback() with captured float samples.
+ *     The writer thread calls IAudioCallback::writeCallback() to request output samples.
+ *     Threading allows independent blocking on capture and playback devices, which is
+ *     important when RX and TX use different physical sound cards.
+ *     Device enumeration walks the ALSA control interface (snd_card_next / snd_ctl_pcm_next_device).
+ *
+ * In both cases, samples are normalised floats in [-1.0, 1.0].  The ALSA path converts
+ * to/from signed 16-bit PCM internally.
+ *
+ * IAudioCallback::readCallback(input, n, id) - n float samples arrived from device id.
+ * IAudioCallback::writeCallback(output, n, id) - fill n float samples for device id.
+ */
+
+#if defined(_WIN32) || (defined(__APPLE__) && defined(__MACH__))
 
 #include "portaudio.h"
 
 class CSoundCardReaderWriter {
 public:
-	CSoundCardReaderWriter(const wxString& readDevice, const wxString& writeDevice, unsigned int sampleRate, unsigned int blockSize);
+	CSoundCardReaderWriter(const std::string& readDevice, const std::string& writeDevice, unsigned int sampleRate, unsigned int blockSize);
 	~CSoundCardReaderWriter();
 
 	void setCallback(IAudioCallback* callback, int id);
 	bool open();
 	void close();
 
-	void callback(const wxFloat32* input, wxFloat32* output, unsigned int nSamples);
+	void callback(const float* input, float* output, unsigned int nSamples);
 
-	static wxArrayString getReadDevices();
-	static wxArrayString getWriteDevices();
+	static std::vector<std::string> getReadDevices();
+	static std::vector<std::string> getWriteDevices();
 
 private:
-	wxString        m_readDevice;
-	wxString        m_writeDevice;
-	unsigned int    m_sampleRate;
-	unsigned int    m_blockSize;
-	IAudioCallback* m_callback;
-	int             m_id;
-	PaStream*       m_stream;
+	std::string        m_readDevice;
+	std::string        m_writeDevice;
+	unsigned int       m_sampleRate;
+	unsigned int       m_blockSize;
+	IAudioCallback*    m_callback;
+	int                m_id;
+	PaStream*          m_stream;
 
 	bool convertNameToDevices(PaDeviceIndex& inDev, PaDeviceIndex& outDev);
 };
@@ -52,52 +81,63 @@ private:
 #else
 
 #include <alsa/asoundlib.h>
+#include <thread>
 
-class CSoundCardReader : public wxThread {
+// ALSA capture thread.  entry() loops on snd_pcm_readi(), converts int16 samples
+// to float, and delivers them to the IAudioCallback via readCallback().
+class CSoundCardReader {
 public:
 	CSoundCardReader(snd_pcm_t* handle, unsigned int blockSize, unsigned int channels, IAudioCallback* callback, int id);
 	virtual ~CSoundCardReader();
 
-	virtual void* Entry();
-
-	virtual void kill();
+	void start();
+	void kill();
+	void join();
 
 private:
-	snd_pcm_t*      m_handle;
-	unsigned int    m_blockSize;
-	unsigned int    m_channels;
-	IAudioCallback* m_callback;
-	int             m_id;
-	bool            m_killed;
-	wxFloat32*      m_buffer;
-	short*          m_samples;
+	void entry();
+
+	snd_pcm_t*        m_handle;
+	unsigned int      m_blockSize;
+	unsigned int      m_channels;
+	IAudioCallback*   m_callback;
+	int               m_id;
+	std::atomic<bool> m_killed;
+	float*            m_buffer;
+	short*            m_samples;
+	std::thread       m_thread;
 };
 
-class CSoundCardWriter : public wxThread {
+// ALSA playback thread.  entry() calls writeCallback() to fill float samples,
+// converts them to int16, and writes them via snd_pcm_writei().
+class CSoundCardWriter {
 public:
 	CSoundCardWriter(snd_pcm_t* handle, unsigned int blockSize, unsigned int channels, IAudioCallback* callback, int id);
 	virtual ~CSoundCardWriter();
 
-	virtual void* Entry();
+	void start();
+	void kill();
+	void join();
 
-	virtual void kill();
-
-	virtual bool isBusy() const;
+	bool isBusy() const;
 
 private:
-	snd_pcm_t*      m_handle;
-	unsigned int    m_blockSize;
-	unsigned int    m_channels;
-	IAudioCallback* m_callback;
-	int             m_id;
-	bool            m_killed;
-	wxFloat32*      m_buffer;
-	short*          m_samples;
+	void entry();
+
+	snd_pcm_t*        m_handle;
+	unsigned int      m_blockSize;
+	unsigned int      m_channels;
+	IAudioCallback*   m_callback;
+	int               m_id;
+	std::atomic<bool> m_killed;
+	float*            m_buffer;
+	short*            m_samples;
+	std::thread       m_thread;
 };
 
 class CSoundCardReaderWriter {
 public:
-	CSoundCardReaderWriter(const wxString& readDevice, const wxString& writeDevice, unsigned int sampleRate, unsigned int blockSize);
+	CSoundCardReaderWriter(const std::string& readDevice, const std::string& writeDevice, unsigned int sampleRate, unsigned int blockSize);
 	~CSoundCardReaderWriter();
 
 	void setCallback(IAudioCallback* callback, int id);
@@ -106,12 +146,12 @@ public:
 
 	bool isWriterBusy() const;
 
-	static wxArrayString getReadDevices();
-	static wxArrayString getWriteDevices();
+	static std::vector<std::string> getReadDevices();
+	static std::vector<std::string> getWriteDevices();
 
 private:
-	wxString             m_readDevice;
-	wxString             m_writeDevice;
+	std::string          m_readDevice;
+	std::string          m_writeDevice;
 	unsigned int         m_sampleRate;
 	unsigned int         m_blockSize;
 	IAudioCallback*      m_callback;
@@ -119,8 +159,8 @@ private:
 	CSoundCardReader*    m_reader;
 	CSoundCardWriter*    m_writer;
 
-	static wxArrayString m_readDevices;
-	static wxArrayString m_writeDevices;
+	static std::vector<std::string> m_readDevices;
+	static std::vector<std::string> m_writeDevices;
 };
 
 #endif

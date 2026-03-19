@@ -23,9 +23,9 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
-
-#if defined(_WIN32) || defined(_WIN64)
+#if defined(_WIN32)
 #include <process.h>
+#define getpid _getpid
 #else
 #include <unistd.h>
 #endif
@@ -60,11 +60,7 @@ CMQTTConnection::~CMQTTConnection()
 bool CMQTTConnection::open()
 {
 	char name[50U];
-#if defined(_WIN32) || defined(_WIN64)
-	::sprintf(name, "DStarRepeater.%u", (unsigned)::_getpid());
-#else
-	::sprintf(name, "DStarRepeater.%u", (unsigned)::getpid());
-#endif
+	::snprintf(name, sizeof(name), "DStarRepeater.%u", (unsigned)::getpid());
 
 	::fprintf(stdout, "DStarRepeater (%s) connecting to MQTT as %s\n", m_name.c_str(), name);
 
@@ -75,7 +71,7 @@ bool CMQTTConnection::open()
 	}
 
 	if (m_authEnabled)
-			::mosquitto_username_pw_set(m_mosq, m_username.c_str(), m_password.c_str());
+		::mosquitto_username_pw_set(m_mosq, m_username.c_str(), m_password.c_str());
 
 	::mosquitto_connect_callback_set(m_mosq, onConnect);
 	::mosquitto_subscribe_callback_set(m_mosq, onSubscribe);
@@ -127,7 +123,7 @@ bool CMQTTConnection::publish(const char* topic, const unsigned char* data, unsi
 
 	if (::strchr(topic, '/') == nullptr) {
 		char topicEx[100U];
-		::sprintf(topicEx, "%s/%s", m_name.c_str(), topic);
+		::snprintf(topicEx, sizeof(topicEx), "%s/%s", m_name.c_str(), topic);
 
 		int rc = ::mosquitto_publish(m_mosq, nullptr, topicEx, len, data, static_cast<int>(m_qos), false);
 		if (rc != MOSQ_ERR_SUCCESS) {
@@ -174,7 +170,7 @@ void CMQTTConnection::onConnect(mosquitto* mosq, void* obj, int rc)
 
 		if (topic.find_first_of('/') == std::string::npos) {
 			char topicEx[100U];
-			::sprintf(topicEx, "%s/%s", p->m_name.c_str(), topic.c_str());
+			::snprintf(topicEx, sizeof(topicEx), "%s/%s", p->m_name.c_str(), topic.c_str());
 
 			rc = ::mosquitto_subscribe(mosq, nullptr, topicEx, static_cast<int>(p->m_qos));
 			if (rc != MOSQ_ERR_SUCCESS) {
@@ -213,7 +209,7 @@ void CMQTTConnection::onMessage(mosquitto* mosq, void* obj, const mosquitto_mess
 		std::string topic = (*it).first;
 
 		char topicEx[100U];
-		::sprintf(topicEx, "%s/%s", p->m_name.c_str(), topic.c_str());
+		::snprintf(topicEx, sizeof(topicEx), "%s/%s", p->m_name.c_str(), topic.c_str());
 
 		if (::strcmp(topicEx, message->topic) == 0) {
 			(*it).second((unsigned char*)message->payload, message->payloadlen);

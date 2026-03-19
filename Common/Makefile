@@ -2,7 +2,7 @@ OBJECTS = AMBEFEC.o AnnouncementUnit.o ArduinoController.o BeaconUnit.o Callsign
 	  DStarGMSKDemodulator.o DStarGMSKModulator.o DStarRepeaterConfig.o DStarScrambler.o DummyController.o DVAPController.o \
 	  DVMegaController.o DVRPTRV1Controller.o DVRPTRV2Controller.o DVRPTRV3Controller.o DVTOOLFileReader.o DVTOOLFileWriter.o \
 	  ExternalController.o FIRFilter.o GatewayProtocolHandler.o GMSKController.o GMSKModem.o GMSKModemLibUsb.o Golay.o \
-	  GPIOController.o HardwareController.o HeaderData.o IcomController.o K8055Controller.o LogEvent.o Logger.o MMDVMController.o \
+	  GPIOController.o HardwareController.o HeaderData.o IcomController.o K8055Controller.o Logger.o MMDVMController.o \
 	  Modem.o OutputQueue.o RepeaterProtocolHandler.o SerialDataController.o SerialLineController.o SerialPortSelector.o \
 	  SlowDataDecoder.o SlowDataEncoder.o SoundCardController.o SoundCardReaderWriter.o SplitController.o TCPReaderWriter.o \
 	  MQTTConnection.o Timer.o UDPReaderWriter.o UDRCController.o URIUSBController.o Utils.o
@@ -16,10 +16,15 @@ Common.a:	$(OBJECTS)
 
 -include $(OBJECTS:.o=.d)
 
+# BeaconUnit needs DATA_DIR at compile time to locate AMBE voice files in the
+# system data directory when they are not found under $HOME.
+BeaconUnit.o: BeaconUnit.cpp
+		$(CXX) $(CFLAGS) -DDATA_DIR='"$(DATADIR)"' -c -o $@ $<
+		$(CXX) -MM $(CFLAGS) -DDATA_DIR='"$(DATADIR)"' $< > $*.d
+
 %.o: %.cpp
-		$(CXX) -DwxUSE_GUI=0 $(CFLAGS) -c -o $@ $<
-		$(CXX) -MM -DwxUSE_GUI=0 $(CFLAGS) $< > $*.d
+		$(CXX) $(CFLAGS) -c -o $@ $<
+		$(CXX) -MM $(CFLAGS) $< > $*.d
 
 clean:
 		$(RM) Common.a *.o *.d *.bak *~
-

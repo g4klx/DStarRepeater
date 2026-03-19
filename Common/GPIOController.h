@@ -18,8 +18,6 @@
 
 #include "HardwareController.h"
 
-#include <wx/wx.h>
-
 class CGPIOController : public IHardwareController {
 public:
 	CGPIOController(unsigned int config);
@@ -48,4 +46,3 @@ private:
 #endif
 
 #endif
-

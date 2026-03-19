@@ -18,6 +18,12 @@
 
 #include "GMSKModemLibUsb.h"
 #include "DStarDefines.h"
+#include "Logger.h"
+
+#include <cassert>
+#include <chrono>
+#include <thread>
+#include <string>
 
 const unsigned int VENDOR_ID = 0x04D8U;
 
@@ -46,118 +52,48 @@ const char PTT_OnOff  = 0x20;
 const int PTT_ON  = 1;
 const int PTT_OFF = 0;
 
-#if defined(WIN32)
-const wxString LIBNAME = wxT("libusb0");
-
-wxDynamicLibrary* CGMSKModemLibUsb::m_library = NULL;
-bool              CGMSKModemLibUsb::m_loaded  = false;
-
-void            (*CGMSKModemLibUsb::m_usbInit)() = NULL;
-int             (*CGMSKModemLibUsb::m_usbFindBusses)() = NULL;
-int             (*CGMSKModemLibUsb::m_usbFindDevices)() = NULL;
-usb_bus*        (*CGMSKModemLibUsb::m_usbGetBusses)() = NULL;
-usb_dev_handle* (*CGMSKModemLibUsb::m_usbOpen)(struct usb_device*) = NULL;
-int             (*CGMSKModemLibUsb::m_usbSetConfiguration)(usb_dev_handle*, int) = NULL;
-int             (*CGMSKModemLibUsb::m_usbControlMsg)(usb_dev_handle*, int, int, int, int, unsigned char*, int, int) = NULL;
-char*           (*CGMSKModemLibUsb::m_usbStrerror)() = NULL;
-int             (*CGMSKModemLibUsb::m_usbClose)(usb_dev_handle*) = NULL;
-#endif
-
 static void libUsbLogError(int ret, const char *message) {
-#if defined(WIN32)
-			wxString errorText(CGMSKModemLibUsb::m_usbStrerror(), wxConvLocal);
-#else
-			wxString errorText(libusb_error_name(ret), wxConvLocal);
-#endif
-			wxLogMessage(wxT("%s, ret: %d, err=%s"), message, ret, errorText.c_str());
+	std::string errorText(libusb_error_name(ret));
+	wxLogMessage("%s, ret: %d, err=%s", message, ret, errorText.c_str());
 }
 
 CGMSKModemLibUsb::CGMSKModemLibUsb(unsigned int address) :
 m_address(address),
-#if !defined(WIN32)
-m_context(NULL),
-#endif
-m_dev(NULL),
+m_context(nullptr),
+m_dev(nullptr),
 m_brokenSpace(false)
 {
-
-#if defined(WIN32)
-	if (m_library == NULL)
-		m_library = new wxDynamicLibrary(LIBNAME);
-
-	if (!m_library->IsLoaded()) {
-		wxLogError(wxT("Unable to load shared library %s"), LIBNAME.c_str());
-		return;
-	}
-
-	void* ptr1 = m_library->GetSymbol(wxT("usb_init"));
-	void* ptr2 = m_library->GetSymbol(wxT("usb_find_busses"));
-	void* ptr3 = m_library->GetSymbol(wxT("usb_find_devices"));
-	void* ptr4 = m_library->GetSymbol(wxT("usb_get_busses"));
-	void* ptr5 = m_library->GetSymbol(wxT("usb_open"));
-	void* ptr6 = m_library->GetSymbol(wxT("usb_set_configuration"));
-	void* ptr7 = m_library->GetSymbol(wxT("usb_control_msg"));
-	void* ptr8 = m_library->GetSymbol(wxT("usb_strerror"));
-	void* ptr9 = m_library->GetSymbol(wxT("usb_close"));
-
-	if (ptr1 == NULL || ptr2 == NULL || ptr3 == NULL ||
-		ptr4 == NULL || ptr5 == NULL || ptr6 == NULL ||
-		ptr7 == NULL || ptr8 == NULL || ptr9 == NULL) {
-		wxLogError(wxT("Unable to get symbols from %s"), LIBNAME.c_str());
-		return;
-	}
-
-	m_usbInit             = (void     (*)())ptr1;
-	m_usbFindBusses       = (int      (*)())ptr2;
-	m_usbFindDevices      = (int      (*)())ptr3;
-	m_usbGetBusses        = (usb_bus* (*)())ptr4;
-	m_usbOpen             = (usb_dev_handle* (*)(struct usb_device*))ptr5;
-	m_usbSetConfiguration = (int      (*)(usb_dev_handle*, int))ptr6;
-	m_usbControlMsg       = (int      (*)(usb_dev_handle*, int, int, int, int, unsigned char*, int, int))ptr7;
-	m_usbStrerror         = (char*    (*)())ptr8;
-	m_usbClose            = (int      (*)(usb_dev_handle*))ptr9;
-
-	wxLogMessage(wxT("Successfully loaded library %s"), LIBNAME.c_str());
-	
-	m_loaded = true;
-#else
 	::libusb_init(&m_context);
-#endif
 }
 
 
 CGMSKModemLibUsb::~CGMSKModemLibUsb()
 {
-#if !defined(WIN32)
-	wxASSERT(m_context != NULL);
+	assert(m_context != nullptr);
 	::libusb_exit(m_context);
-#endif
 }
 
 bool CGMSKModemLibUsb::open()
 {
-#if !defined(WIN32)
-	wxASSERT(m_context != NULL);
-#endif
-	wxASSERT(m_dev == NULL);
+	assert(m_context != nullptr);
+	assert(m_dev == nullptr);
 
 	bool ret1 = openModem();
 	if (!ret1) {
-		wxLogError(wxT("Cannot find the GMSK Modem with address: 0x%04X"), m_address);
+		wxLogError("Cannot find the GMSK Modem with address: 0x%04X", m_address);
 		return false;
 	}
 
-	wxLogInfo(wxT("Found the GMSK Modem with address: 0x%04X"), m_address);
+	wxLogInfo("Found the GMSK Modem with address: 0x%04X", m_address);
 
-	wxString version;
+	std::string version;
 
 	int ret2;
 	do {
 		unsigned char buffer[GMSK_MODEM_DATA_LENGTH];
 		ret2 = io(0xC0, GET_VERSION, 0, 0, buffer, GMSK_MODEM_DATA_LENGTH, USB_TIMEOUT);
 		if (ret2 > 0) {
-			wxString text((char *) buffer, wxConvLocal, ret2);
-			version.Append(text);
+			version.append((char*)buffer, ret2);
 		} else if (ret2 < 0) {
 			::libUsbLogError(ret2, "GET_VERSION");
 			close();
@@ -165,27 +101,34 @@ bool CGMSKModemLibUsb::open()
 		}
 	} while (ret2 == int(GMSK_MODEM_DATA_LENGTH));
 
-	wxLogInfo(wxT("Firmware version: %s"), version.c_str());
+	wxLogInfo("Firmware version: %s", version.c_str());
 
 	// Trap firmware version 0.1.00 of DUTCH*Star and complain loudly
-	if (version.Find(wxT("DUTCH*Star")) != wxNOT_FOUND && version.Find(wxT("0.1.00")) != wxNOT_FOUND) {
-		wxLogWarning(wxT("This modem firmware is not supported by the repeater"));
-		wxLogWarning(wxT("Please upgrade to a newer version"));
+	if (version.find("DUTCH*Star") != std::string::npos && version.find("0.1.00") != std::string::npos) {
+		wxLogWarning("This modem firmware is not supported by the repeater");
+		wxLogWarning("Please upgrade to a newer version");
 		close();
 		return false;
 	}
 
 	// DUTCH*Star firmware has a broken concept of free space
-	if (version.Find(wxT("DUTCH*Star")) != wxNOT_FOUND)
+	if (version.find("DUTCH*Star") != std::string::npos)
 		m_brokenSpace = true;
 
 	return true;
 }
 
+// Polls the modem for a received D-Star header via repeated GET_HEADER transfers.
+// Each transfer returns up to 8 bytes.  The loop accumulates bytes until
+// RADIO_HEADER_LENGTH_BYTES have been received.
+// If GET_HEADER returns 0 bytes mid-header and the COS (carrier-operated squelch)
+// status bit is still set, the header counter is reset to zero because the signal
+// has restarted (e.g. a quick key-up/key-down) and the modem's header buffer has
+// been overwritten.  Returns false on CRC error (GET_AD_STATUS CRC_ERROR bit set).
 bool CGMSKModemLibUsb::readHeader(unsigned char* header, unsigned int length)
 {
-	wxASSERT(header != NULL);
-	wxASSERT(length > (RADIO_HEADER_LENGTH_BYTES * 2U));
+	assert(header != nullptr);
+	assert(length > (RADIO_HEADER_LENGTH_BYTES * 2U));
 
 	unsigned int offset = 0U;
 
@@ -197,12 +140,12 @@ bool CGMSKModemLibUsb::readHeader(unsigned char* header, unsigned int length)
 			if (ret == -19)				// -ENODEV
 				return false;
 
-			::wxMilliSleep(10UL);
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		} else if (ret == 0) {
 			if (offset == 0U)
 				return false;
 
-			::wxMilliSleep(10UL);
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 			unsigned char status;
 			int ret = io(0xC0, GET_AD_STATUS, 0, 0, &status, 1, USB_TIMEOUT);
@@ -212,7 +155,7 @@ bool CGMSKModemLibUsb::readHeader(unsigned char* header, unsigned int length)
 				if (ret == -19)			// -ENODEV
 					return false;
 
-				::wxMilliSleep(10UL);
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
 			} else if (ret > 0) {
 				if ((status & COS_OnOff) == COS_OnOff)
 					offset = 0U;
@@ -230,7 +173,7 @@ bool CGMSKModemLibUsb::readHeader(unsigned char* header, unsigned int length)
 	}
 
 	if ((status & CRC_ERROR) == CRC_ERROR) {
-		wxLogMessage(wxT("Header - CRC Error"));
+		wxLogMessage("Header - CRC Error");
 		return false;
 	}
 
@@ -239,8 +182,8 @@ bool CGMSKModemLibUsb::readHeader(unsigned char* header, unsigned int length)
 
 int CGMSKModemLibUsb::readData(unsigned char* data, unsigned int length, bool& end)
 {
-	wxASSERT(data != NULL);
-	wxASSERT(length > 0U);
+	assert(data != nullptr);
+	assert(length > 0U);
 
 	end = false;
 
@@ -273,8 +216,8 @@ int CGMSKModemLibUsb::readData(unsigned char* data, unsigned int length, bool& e
 
 void CGMSKModemLibUsb::writeHeader(unsigned char* header, unsigned int length)
 {
-	wxASSERT(header != NULL);
-	wxASSERT(length >= (RADIO_HEADER_LENGTH_BYTES - 2U));
+	assert(header != nullptr);
+	assert(length >= (RADIO_HEADER_LENGTH_BYTES - 2U));
 
 	io(0x40, SET_MyCALL2,  0, 0, (header + 35U), SHORT_CALLSIGN_LENGTH, USB_TIMEOUT);
 	io(0x40, SET_MyCALL,   0, 0, (header + 27U), LONG_CALLSIGN_LENGTH,  USB_TIMEOUT);
@@ -322,8 +265,8 @@ void CGMSKModemLibUsb::setPTT(bool on)
 
 int CGMSKModemLibUsb::writeData(unsigned char* data, unsigned int length)
 {
-	wxASSERT(data != NULL);
-	wxASSERT(length > 0U && length <= DV_FRAME_LENGTH_BYTES);
+	assert(data != nullptr);
+	assert(length > 0U && length <= DV_FRAME_LENGTH_BYTES);
 
 	if (length > GMSK_MODEM_DATA_LENGTH) {
 		int ret = io(0x40, PUT_DATA, 0, 0, data, GMSK_MODEM_DATA_LENGTH, USB_TIMEOUT);
@@ -337,7 +280,7 @@ int CGMSKModemLibUsb::writeData(unsigned char* data, unsigned int length)
 		}
 
 		// Give libUSB some recovery time
-		::wxMilliSleep(3UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(3));
 
 		ret = io(0x40, PUT_DATA, 0, 0, (data + GMSK_MODEM_DATA_LENGTH), length - GMSK_MODEM_DATA_LENGTH, USB_TIMEOUT);
 		if (ret < 0) {
@@ -348,7 +291,7 @@ int CGMSKModemLibUsb::writeData(unsigned char* data, unsigned int length)
 
 			return int(GMSK_MODEM_DATA_LENGTH);
 		}
-	
+
 		return length;
 	} else {
 		int ret = io(0x40, PUT_DATA, 0, 0, data, length, USB_TIMEOUT);
@@ -367,46 +310,19 @@ int CGMSKModemLibUsb::writeData(unsigned char* data, unsigned int length)
 
 void CGMSKModemLibUsb::close()
 {
-	wxASSERT(m_dev != NULL);
+	assert(m_dev != nullptr);
 
-#if defined(WIN32)
-	m_usbClose(m_dev);
-#else
 	libusb_close(m_dev);
-#endif
-	m_dev = NULL;
+	m_dev = nullptr;
 }
 
 bool CGMSKModemLibUsb::openModem()
 {
-#if defined(WIN32)
-	if (!m_loaded)
-		return false;
-
-	m_usbInit();
-	m_usbFindBusses();
-	m_usbFindDevices();
-
-	for (struct usb_bus* bus = m_usbGetBusses(); bus != NULL; bus = bus->next) {
-		for (struct usb_device* dev = bus->devices; dev != NULL; dev = dev->next) {
-			if (dev->descriptor.idVendor == VENDOR_ID && dev->descriptor.idProduct == m_address) {
-				m_dev = m_usbOpen(dev);
-				break;
-			}
-		}
-	}
-
-	if (m_dev == NULL)
-		return false;
-
-	m_usbSetConfiguration(m_dev, 1);
-#else
 	m_dev = ::libusb_open_device_with_vid_pid(m_context, VENDOR_ID, m_address);
-	if (m_dev == NULL)
+	if (m_dev == nullptr)
 		return false;
 
 	::libusb_set_configuration(m_dev, 1);
-#endif
 
 	unsigned char c;
 	io(0x40, SET_AD_INIT, 0, 0, &c, 0, USB_TIMEOUT);
@@ -416,27 +332,23 @@ bool CGMSKModemLibUsb::openModem()
 	return true;
 }
 
-int CGMSKModemLibUsb::io(uint8_t requestType, uint8_t request, uint16_t value, 
-                         uint16_t index, unsigned char* data, uint16_t length, 
+int CGMSKModemLibUsb::io(uint8_t requestType, uint8_t request, uint16_t value,
+                         uint16_t index, unsigned char* data, uint16_t length,
                          unsigned int timeout)
 {
-	wxASSERT(m_dev != NULL);
-	wxASSERT(data != NULL);
+	assert(m_dev != nullptr);
+	assert(data != nullptr);
 
 	int ret = 0;
 	for (unsigned int i = 0U; i < 4U; i++) {
-#if defined(WIN32)
-		ret = m_usbControlMsg(m_dev, requestType, request, value, index, data, length, timeout);
-#else
 		ret = ::libusb_control_transfer(m_dev, requestType, request, value, index, data, length, timeout);
-#endif
 		if (ret >= 0)
 			return ret;
 
 		if (ret == -19)		// ENODEV
 			return ret;
 
-		::wxMilliSleep(5UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 	}
 
 	return ret;

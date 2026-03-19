@@ -15,8 +15,10 @@
 
 #include "DStarDefines.h"
 
+#include <chrono>
+#include <thread>
+
 CExternalController::CExternalController(IHardwareController* controller, bool pttInvert) :
-wxThread(wxTHREAD_JOINABLE),
 m_controller(controller),
 m_pttInvert(pttInvert),
 m_disable(false),
@@ -27,10 +29,11 @@ m_out1(false),
 m_out2(false),
 m_out3(false),
 m_out4(false),
-m_kill(false)
+m_kill(false),
+m_thread()
 {
-	// wxASSERT(controller != NULL);
-
+	// When PTT is active-low the idle state is high (i.e. inverted true), so
+	// pre-set m_radioTX accordingly before the thread starts writing to hardware.
 	if (m_pttInvert)
 		m_radioTX = true;
 }
@@ -46,42 +49,45 @@ bool CExternalController::open()
 	if (!res)
 		return false;
 
-	Create();
-	Run();
+	m_thread = std::thread(&CExternalController::entry, this);
 
 	return true;
 }
 
-void* CExternalController::Entry()
+void CExternalController::entry()
 {
-	wxASSERT(m_controller != NULL);
+	bool dummy1, dummy2, dummy3, dummy4, disableIn;
 
-	bool dummy1, dummy2, dummy3, dummy4;
-
+	// Poll the hardware at half the D-Star frame rate (every 10 ms).
+	// Apply desired output states, then latch the disable input for the repeater.
 	while (!m_kill) {
 		m_controller->setDigitalOutputs(m_radioTX, false, m_heartbeat, m_active, m_out1, m_out2, m_out3, m_out4);
-		m_controller->getDigitalInputs(dummy1, dummy2, dummy3, dummy4, m_disable);
+		m_controller->getDigitalInputs(dummy1, dummy2, dummy3, dummy4, disableIn);
+		m_disable = disableIn;
 
-		Sleep(DSTAR_FRAME_TIME_MS / 2U);
+		std::this_thread::sleep_for(std::chrono::milliseconds(DSTAR_FRAME_TIME_MS / 2U));
 	}
 
+	// Shutdown sequence: de-assert PTT (accounting for inversion), wait for the
+	// transmitter to drop (3 frame periods = 60 ms), then confirm the idle state
+	// a second time before closing the hardware device.
 	if (m_pttInvert)
 		m_controller->setDigitalOutputs(true, false, false, false, false, false, false, false);
 	else
 		m_controller->setDigitalOutputs(false, false, false, false, false, false, false, false);
-	m_controller->getDigitalInputs(dummy1, dummy2, dummy3, dummy4, m_disable);
+	m_controller->getDigitalInputs(dummy1, dummy2, dummy3, dummy4, disableIn);
+	m_disable = disableIn;
 
-	Sleep(DSTAR_FRAME_TIME_MS * 3U);
+	std::this_thread::sleep_for(std::chrono::milliseconds(DSTAR_FRAME_TIME_MS * 3U));
 
 	if (m_pttInvert)
 		m_controller->setDigitalOutputs(true, false, false, false, false, false, false, false);
 	else
 		m_controller->setDigitalOutputs(false, false, false, false, false, false, false, false);
-	m_controller->getDigitalInputs(dummy1, dummy2, dummy3, dummy4, m_disable);
+	m_controller->getDigitalInputs(dummy1, dummy2, dummy3, dummy4, disableIn);
+	m_disable = disableIn;
 
 	m_controller->close();
-
-	return NULL;
 }
 
 bool CExternalController::getDisable() const
@@ -99,6 +105,7 @@ void CExternalController::setRadioTransmit(bool value)
 
 void CExternalController::setHeartbeat()
 {
+	// Toggle on each call so any periodic caller drives a visible LED blink.
 	m_heartbeat = !m_heartbeat;
 }
 
@@ -131,5 +138,6 @@ void CExternalController::close()
 {
 	m_kill = true;
 
-	Wait();
+	if (m_thread.joinable())
+		m_thread.join();
 }

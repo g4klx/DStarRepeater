@@ -15,6 +15,9 @@
 
 #include "Utils.h"
 
+#include <cassert>
+#include <cstdint>
+
 static const unsigned short ccittTab[] = {
 	0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50A5, 0x60C6, 0x70E7,
 	0x8108, 0x9129, 0xA14A, 0xB16B, 0xC18C, 0xD1AD, 0xE1CE, 0xF1EF,
@@ -60,15 +63,15 @@ CCCITTChecksum::~CCCITTChecksum()
 
 void CCCITTChecksum::update(const unsigned char* data, unsigned int length)
 {
-	wxASSERT(data != NULL);
+	assert(data != nullptr);
 
 	for (unsigned int i = 0U; i < length; i++)
-		m_crc16 = (wxUint16(m_crc8[0U]) << 8) ^ ccittTab[m_crc8[1U] ^ data[i]];
+		m_crc16 = (uint16_t(m_crc8[0U]) << 8) ^ ccittTab[m_crc8[1U] ^ data[i]];
 }
 
 void CCCITTChecksum::result(unsigned char* data)
 {
-	wxASSERT(data != NULL);
+	assert(data != nullptr);
 
 	data[0U] = m_crc8[1U];
 	data[1U] = m_crc8[0U];
@@ -76,7 +79,7 @@ void CCCITTChecksum::result(unsigned char* data)
 
 bool CCCITTChecksum::check(const unsigned char* data)
 {
-	wxASSERT(data != NULL);
+	assert(data != nullptr);
 
 	unsigned char sum[2U];
 	result(sum);

@@ -19,12 +19,8 @@
 
 #include "SerialDataController.h"
 
+#if !defined(_WIN32)
 #include <sys/types.h>
-
-#if defined(__WINDOWS__)
-#include <setupapi.h>
-#include <winioctl.h>
-#else
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <cerrno>
@@ -34,253 +30,15 @@
 #endif
 
 
-#if defined(__WINDOWS__)
+#if !defined(_WIN32)
 
-const unsigned int BUFFER_LENGTH = 1000U;
-
-CSerialDataController::CSerialDataController(const wxString& device, SERIAL_SPEED speed, bool assertRTS) :
-m_device(device),
-m_speed(speed),
-m_assertRTS(assertRTS),
-m_handle(INVALID_HANDLE_VALUE),
-m_readOverlapped(),
-m_writeOverlapped(),
-m_readBuffer(NULL),
-m_readLength(0U),
-m_readPending(false)
-{
-	wxASSERT(!device.IsEmpty());
-
-	m_readBuffer = new unsigned char[BUFFER_LENGTH];
-}
-
-CSerialDataController::~CSerialDataController()
-{
-	delete[] m_readBuffer;
-}
-
-bool CSerialDataController::open()
-{
-	wxASSERT(m_handle == INVALID_HANDLE_VALUE);
-
-	DWORD errCode;
-
-	wxString baseName = m_device.Mid(4U);		// Convert "\\.\COM10" to "COM10"
-
-	m_handle = ::CreateFile(m_device.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
-	if (m_handle == INVALID_HANDLE_VALUE) {
-		wxLogError(wxT("Cannot open device - %s, err=%04lx"), m_device.c_str(), ::GetLastError());
-		return false;
-	}
-
-	DCB dcb;
-	if (::GetCommState(m_handle, &dcb) == 0) {
-		wxLogError(wxT("Cannot get the attributes for %s, err=%04lx"), m_device.c_str(), ::GetLastError());
-		::ClearCommError(m_handle, &errCode, NULL);
-		::CloseHandle(m_handle);
-		return false;
-	}
-
-	dcb.BaudRate     = DWORD(m_speed);
-	dcb.ByteSize     = 8;
-	dcb.Parity       = NOPARITY;
-	dcb.fParity      = FALSE;
-	dcb.StopBits     = ONESTOPBIT;
-	dcb.fInX         = FALSE;
-	dcb.fOutX        = FALSE;
-	dcb.fOutxCtsFlow = FALSE;
-	dcb.fOutxDsrFlow = FALSE;
-	dcb.fDtrControl  = DTR_CONTROL_DISABLE;
-	dcb.fRtsControl  = RTS_CONTROL_DISABLE;
-
-	if (::SetCommState(m_handle, &dcb) == 0) {
-		wxLogError(wxT("Cannot set the attributes for %s, err=%04lx"), m_device.c_str(), ::GetLastError());
-		::ClearCommError(m_handle, &errCode, NULL);
-		::CloseHandle(m_handle);
-		return false;
-	}
-
-	COMMTIMEOUTS timeouts;
-	if (!::GetCommTimeouts(m_handle, &timeouts)) {
-		wxLogError(wxT("Cannot get the timeouts for %s, err=%04lx"), m_device.c_str(), ::GetLastError());
-		::ClearCommError(m_handle, &errCode, NULL);
-		::CloseHandle(m_handle);
-		return false;
-	}
-
-	timeouts.ReadIntervalTimeout        = MAXDWORD;
-	timeouts.ReadTotalTimeoutMultiplier = 0UL;
-	timeouts.ReadTotalTimeoutConstant   = 0UL;
-
-	if (!::SetCommTimeouts(m_handle, &timeouts)) {
-		wxLogError(wxT("Cannot set the timeouts for %s, err=%04lx"), m_device.c_str(), ::GetLastError());
-		::ClearCommError(m_handle, &errCode, NULL);
-		::CloseHandle(m_handle);
-		return false;
-	}
-
-	if (::EscapeCommFunction(m_handle, CLRDTR) == 0) {
-		wxLogError(wxT("Cannot clear DTR for %s, err=%04lx"), m_device.c_str(), ::GetLastError());
-		::ClearCommError(m_handle, &errCode, NULL);
-		::CloseHandle(m_handle);
-		return false;
-	}
-
-	if (::EscapeCommFunction(m_handle, m_assertRTS ? SETRTS : CLRRTS) == 0) {
-		wxLogError(wxT("Cannot set/clear RTS for %s, err=%04lx"), m_device.c_str(), ::GetLastError());
-		::ClearCommError(m_handle, &errCode, NULL);
-		::CloseHandle(m_handle);
-		return false;
-	}
-
-	::ClearCommError(m_handle, &errCode, NULL);
-
-	::memset(&m_readOverlapped, 0x00U, sizeof(OVERLAPPED));
-	::memset(&m_writeOverlapped, 0x00U, sizeof(OVERLAPPED));
-
-	m_readOverlapped.hEvent  = ::CreateEvent(NULL, TRUE, FALSE, NULL);
-	m_writeOverlapped.hEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
-
-	m_readLength  = 0U;
-	m_readPending = false;
-	::memset(m_readBuffer, 0x00U, BUFFER_LENGTH);
-
-	return true;
-}
-
-int CSerialDataController::read(unsigned char* buffer, unsigned int length, unsigned int timeout)
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-	wxASSERT(buffer != NULL);
-
-	unsigned int ptr = 0U;
-
-	while (ptr < length) {
-		int ret = readNonblock(buffer + ptr, length - ptr, timeout);
-		if (ret < 0) {
-			return ret;
-		} else if (ret == 0) {
-			if (ptr == 0U)
-				return 0;
-		} else {
-			ptr += ret;
-		}
-	}
-
-	return int(length);
-}
-
-int CSerialDataController::readNonblock(unsigned char* buffer, unsigned int length, unsigned int timeout)
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-	wxASSERT(buffer != NULL);
-
-	if (length > BUFFER_LENGTH)
-		length = BUFFER_LENGTH;
-
-	if (m_readPending && length != m_readLength) {
-		::CancelIo(m_handle);
-		m_readPending = false;
-	}
-
-	m_readLength = length;
-
-	if (length == 0U)
-		return 0;
-
-	if (!m_readPending) {
-		DWORD bytes = 0UL;
-		BOOL res = ::ReadFile(m_handle, m_readBuffer, m_readLength, &bytes, &m_readOverlapped);
-		if (res) {
-			::memcpy(buffer, m_readBuffer, bytes);
-			return int(bytes);
-		}
-
-		DWORD error = ::GetLastError();
-		if (error != ERROR_IO_PENDING) {
-			wxLogError(wxT("Error from ReadFile: %04lx"), error);
-			return -1;
-		}
-
-		m_readPending = true;
-	}
-
-	DWORD bytes  = 0UL;
-	DWORD millis = timeout;
-	BOOL res = ::GetOverlappedResultEx(m_handle, &m_readOverlapped, &bytes, millis, FALSE);
-	if (!res) {
-		DWORD error = ::GetLastError();
-		if (timeout == 0U && error == ERROR_IO_INCOMPLETE) {
-			return 0;
-		} else if (timeout > 0U && error == WAIT_TIMEOUT) {
-			return 0;
-		} else if (timeout > 0U && error == WAIT_IO_COMPLETION) {
-			return 0;
-		} else {
-			wxLogError(wxT("Error from GetOverlappedResultEx (ReadFile): %04lx"), error);
-			return -1;
-		}
-	}
-
-	::memcpy(buffer, m_readBuffer, bytes);
-	m_readPending = false;
-
-	return int(bytes);
-}
-
-int CSerialDataController::write(const unsigned char* buffer, unsigned int length)
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-	wxASSERT(buffer != NULL);
-
-	if (length == 0U)
-		return 0;
-
-	unsigned int ptr = 0U;
-
-	while (ptr < length) {
-		DWORD bytes = 0UL;
-		BOOL res = ::WriteFile(m_handle, buffer + ptr, length - ptr, &bytes, &m_writeOverlapped);
-		if (!res) {
-			DWORD error = ::GetLastError();
-			if (error != ERROR_IO_PENDING) {
-				wxLogError(wxT("Error from WriteFile: %04lx"), error);
-				return -1;
-			}
-
-			res = ::GetOverlappedResult(m_handle, &m_writeOverlapped, &bytes, TRUE);
-			if (!res) {
-				wxLogError(wxT("Error from GetOverlappedResult (WriteFile): %04lx"), ::GetLastError());
-				return -1;
-			}
-		}
-
-		ptr += bytes;
-	}
-
-	return int(length);
-}
-
-void CSerialDataController::close()
-{
-	wxASSERT(m_handle != INVALID_HANDLE_VALUE);
-
-	::CloseHandle(m_handle);
-	m_handle = INVALID_HANDLE_VALUE;
-
-	::CloseHandle(m_readOverlapped.hEvent);
-	::CloseHandle(m_writeOverlapped.hEvent);
-}
-
-#else
-
-CSerialDataController::CSerialDataController(const wxString& device, SERIAL_SPEED speed, bool assertRTS) :
+CSerialDataController::CSerialDataController(const std::string& device, SERIAL_SPEED speed, bool assertRTS) :
 m_device(device),
 m_speed(speed),
 m_assertRTS(assertRTS),
 m_fd(-1)
 {
-	wxASSERT(!device.IsEmpty());
+	assert(!device.empty());
 }
 
 CSerialDataController::~CSerialDataController()
@@ -289,23 +47,23 @@ CSerialDataController::~CSerialDataController()
 
 bool CSerialDataController::open()
 {
-	wxASSERT(m_fd == -1);
+	assert(m_fd == -1);
 
-	m_fd = ::open(m_device.mb_str(), O_RDWR | O_NOCTTY | O_NDELAY, 0);
+	m_fd = ::open(m_device.c_str(), O_RDWR | O_NOCTTY | O_NDELAY, 0);
 	if (m_fd < 0) {
-		wxLogError(wxT("Cannot open device - %s"), m_device.c_str());
+		::fprintf(stderr, "Cannot open device - %s\n", m_device.c_str());
 		return false;
 	}
 
 	if (::isatty(m_fd) == 0) {
-		wxLogError(wxT("%s is not a TTY device"), m_device.c_str());
+		::fprintf(stderr, "%s is not a TTY device\n", m_device.c_str());
 		::close(m_fd);
 		return false;
 	}
 
 	termios termios;
 	if (::tcgetattr(m_fd, &termios) < 0) {
-		wxLogError(wxT("Cannot get the attributes for %s"), m_device.c_str());
+		::fprintf(stderr, "Cannot get the attributes for %s\n", m_device.c_str());
 		::close(m_fd);
 		return false;
 	}
@@ -352,13 +110,13 @@ bool CSerialDataController::open()
 			::cfsetispeed(&termios, B230400);
 			break;
 		default:
-			wxLogError(wxT("Unsupported serial port speed - %d"), int(m_speed));
+			::fprintf(stderr, "Unsupported serial port speed - %d\n", int(m_speed));
 			::close(m_fd);
 			return false;
 	}
 
 	if (::tcsetattr(m_fd, TCSANOW, &termios) < 0) {
-		wxLogError(wxT("Cannot set the attributes for %s"), m_device.c_str());
+		::fprintf(stderr, "Cannot set the attributes for %s\n", m_device.c_str());
 		::close(m_fd);
 		return false;
 	}
@@ -366,15 +124,15 @@ bool CSerialDataController::open()
 	if (m_assertRTS) {
 		unsigned int y;
 		if (::ioctl(m_fd, TIOCMGET, &y) < 0) {
-			wxLogError(wxT("Cannot get the control attributes for %s"), m_device.c_str());
+			::fprintf(stderr, "Cannot get the control attributes for %s\n", m_device.c_str());
 			::close(m_fd);
 			return false;
 		}
 
 		y |= TIOCM_RTS;
-                                                                                
+
 		if (::ioctl(m_fd, TIOCMSET, &y) < 0) {
-			wxLogError(wxT("Cannot set the control attributes for %s"), m_device.c_str());
+			::fprintf(stderr, "Cannot set the control attributes for %s\n", m_device.c_str());
 			::close(m_fd);
 			return false;
 		}
@@ -385,8 +143,8 @@ bool CSerialDataController::open()
 
 int CSerialDataController::read(unsigned char* buffer, unsigned int length, unsigned int timeout)
 {
-	wxASSERT(buffer != NULL);
-	wxASSERT(m_fd != -1);
+	assert(buffer != nullptr);
+	assert(m_fd != -1);
 
 	if (length == 0U)
 		return 0;
@@ -404,15 +162,15 @@ int CSerialDataController::read(unsigned char* buffer, unsigned int length, unsi
 			tv.tv_sec  =  timeout / 1000U;
 			tv.tv_usec = (timeout % 1000U) * 1000U;
 
-			n = ::select(m_fd + 1, &fds, NULL, NULL, &tv);
+			n = ::select(m_fd + 1, &fds, nullptr, nullptr, &tv);
 			if (n == 0)
 				return 0;
 		} else {
-			n = ::select(m_fd + 1, &fds, NULL, NULL, NULL);
+			n = ::select(m_fd + 1, &fds, nullptr, nullptr, nullptr);
 		}
 
 		if (n < 0) {
-			wxLogError(wxT("Error from select(), errno=%d"), errno);
+			::fprintf(stderr, "Error from select(), errno=%d\n", errno);
 			return -1;
 		}
 
@@ -420,7 +178,7 @@ int CSerialDataController::read(unsigned char* buffer, unsigned int length, unsi
 			ssize_t len = ::read(m_fd, buffer + offset, length - offset);
 			if (len < 0) {
 				if (errno != EAGAIN) {
-					wxLogError(wxT("Error from read(), errno=%d"), errno);
+					::fprintf(stderr, "Error from read(), errno=%d\n", errno);
 					return -1;
 				}
 			}
@@ -435,8 +193,8 @@ int CSerialDataController::read(unsigned char* buffer, unsigned int length, unsi
 
 int CSerialDataController::write(const unsigned char* buffer, unsigned int length)
 {
-	wxASSERT(buffer != NULL);
-	wxASSERT(m_fd != -1);
+	assert(buffer != nullptr);
+	assert(m_fd != -1);
 
 	if (length == 0U)
 		return 0;
@@ -447,7 +205,7 @@ int CSerialDataController::write(const unsigned char* buffer, unsigned int lengt
 		ssize_t n = ::write(m_fd, buffer + ptr, length - ptr);
 		if (n < 0) {
 			if (errno != EAGAIN) {
-				wxLogError(wxT("Error returned from write(), errno=%d"), errno);
+				::fprintf(stderr, "Error returned from write(), errno=%d\n", errno);
 				return -1;
 			}
 		}
@@ -461,10 +219,184 @@ int CSerialDataController::write(const unsigned char* buffer, unsigned int lengt
 
 void CSerialDataController::close()
 {
-	wxASSERT(m_fd != -1);
+	assert(m_fd != -1);
 
 	::close(m_fd);
 	m_fd = -1;
 }
 
-#endif
+#else // _WIN32
+
+CSerialDataController::CSerialDataController(const std::string& device, SERIAL_SPEED speed, bool assertRTS) :
+m_device(device),
+m_speed(speed),
+m_assertRTS(assertRTS),
+m_handle(INVALID_HANDLE_VALUE)
+{
+	assert(!device.empty());
+}
+
+CSerialDataController::~CSerialDataController()
+{
+}
+
+bool CSerialDataController::open()
+{
+	assert(m_handle == INVALID_HANDLE_VALUE);
+
+	// On Windows, ports above COM9 require the \\.\COMn prefix.
+	std::string path = "\\\\.\\" + m_device;
+
+	m_handle = ::CreateFileA(path.c_str(),
+	                         GENERIC_READ | GENERIC_WRITE,
+	                         0,
+	                         nullptr,
+	                         OPEN_EXISTING,
+	                         FILE_ATTRIBUTE_NORMAL,
+	                         nullptr);
+	if (m_handle == INVALID_HANDLE_VALUE) {
+		::fprintf(stderr, "Cannot open device - %s\n", m_device.c_str());
+		return false;
+	}
+
+	DCB dcb;
+	::memset(&dcb, 0, sizeof(DCB));
+	dcb.DCBlength = sizeof(DCB);
+	if (!::GetCommState(m_handle, &dcb)) {
+		::fprintf(stderr, "Cannot get the attributes for %s\n", m_device.c_str());
+		::CloseHandle(m_handle);
+		m_handle = INVALID_HANDLE_VALUE;
+		return false;
+	}
+
+	dcb.BaudRate = static_cast<DWORD>(m_speed);
+	dcb.ByteSize = 8;
+	dcb.Parity   = NOPARITY;
+	dcb.StopBits = ONESTOPBIT;
+	dcb.fBinary  = TRUE;
+	dcb.fParity  = FALSE;
+	dcb.fOutxCtsFlow  = FALSE;
+	dcb.fOutxDsrFlow  = FALSE;
+	dcb.fDtrControl   = DTR_CONTROL_DISABLE;
+	dcb.fRtsControl   = RTS_CONTROL_DISABLE;
+	dcb.fOutX  = FALSE;
+	dcb.fInX   = FALSE;
+
+	if (!::SetCommState(m_handle, &dcb)) {
+		::fprintf(stderr, "Cannot set the attributes for %s\n", m_device.c_str());
+		::CloseHandle(m_handle);
+		m_handle = INVALID_HANDLE_VALUE;
+		return false;
+	}
+
+	// Use infinite inter-character timeout; per-read timeout set in read().
+	COMMTIMEOUTS timeouts;
+	::memset(&timeouts, 0, sizeof(COMMTIMEOUTS));
+	timeouts.ReadIntervalTimeout         = 0;
+	timeouts.ReadTotalTimeoutMultiplier  = 0;
+	timeouts.ReadTotalTimeoutConstant    = 0;
+	timeouts.WriteTotalTimeoutMultiplier = 0;
+	timeouts.WriteTotalTimeoutConstant   = 0;
+	if (!::SetCommTimeouts(m_handle, &timeouts)) {
+		::fprintf(stderr, "Cannot set the timeouts for %s\n", m_device.c_str());
+		::CloseHandle(m_handle);
+		m_handle = INVALID_HANDLE_VALUE;
+		return false;
+	}
+
+	if (m_assertRTS) {
+		if (!::EscapeCommFunction(m_handle, SETRTS)) {
+			::fprintf(stderr, "Cannot set RTS for %s\n", m_device.c_str());
+			::CloseHandle(m_handle);
+			m_handle = INVALID_HANDLE_VALUE;
+			return false;
+		}
+	}
+
+	return true;
+}
+
+int CSerialDataController::read(unsigned char* buffer, unsigned int length, unsigned int timeout)
+{
+	assert(buffer != nullptr);
+	assert(m_handle != INVALID_HANDLE_VALUE);
+
+	if (length == 0U)
+		return 0;
+
+	unsigned int offset = 0U;
+
+	// Apply the caller's timeout to the first byte only.
+	COMMTIMEOUTS timeouts;
+	::memset(&timeouts, 0, sizeof(COMMTIMEOUTS));
+	timeouts.ReadIntervalTimeout         = 0;
+	timeouts.ReadTotalTimeoutMultiplier  = 0;
+	timeouts.ReadTotalTimeoutConstant    = (offset == 0U) ? static_cast<DWORD>(timeout) : MAXDWORD;
+	timeouts.WriteTotalTimeoutMultiplier = 0;
+	timeouts.WriteTotalTimeoutConstant   = 0;
+	::SetCommTimeouts(m_handle, &timeouts);
+
+	while (offset < length) {
+		if (offset == 1U) {
+			// After the first byte arrives, block indefinitely for the rest.
+			timeouts.ReadTotalTimeoutConstant = MAXDWORD;
+			::SetCommTimeouts(m_handle, &timeouts);
+		}
+
+		DWORD bytesRead = 0U;
+		BOOL ok = ::ReadFile(m_handle,
+		                     buffer + offset,
+		                     length - offset,
+		                     &bytesRead,
+		                     nullptr);
+		if (!ok) {
+			::fprintf(stderr, "Error from ReadFile(), error=%lu\n", ::GetLastError());
+			return -1;
+		}
+
+		if (bytesRead == 0U && offset == 0U)
+			return 0; // timeout on first byte
+
+		offset += bytesRead;
+	}
+
+	return static_cast<int>(length);
+}
+
+int CSerialDataController::write(const unsigned char* buffer, unsigned int length)
+{
+	assert(buffer != nullptr);
+	assert(m_handle != INVALID_HANDLE_VALUE);
+
+	if (length == 0U)
+		return 0;
+
+	unsigned int ptr = 0U;
+
+	while (ptr < length) {
+		DWORD bytesWritten = 0U;
+		BOOL ok = ::WriteFile(m_handle,
+		                      buffer + ptr,
+		                      length - ptr,
+		                      &bytesWritten,
+		                      nullptr);
+		if (!ok) {
+			::fprintf(stderr, "Error returned from WriteFile(), error=%lu\n", ::GetLastError());
+			return -1;
+		}
+
+		ptr += bytesWritten;
+	}
+
+	return static_cast<int>(length);
+}
+
+void CSerialDataController::close()
+{
+	assert(m_handle != INVALID_HANDLE_VALUE);
+
+	::CloseHandle(m_handle);
+	m_handle = INVALID_HANDLE_VALUE;
+}
+
+#endif // _WIN32

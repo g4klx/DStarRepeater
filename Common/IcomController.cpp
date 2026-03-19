@@ -20,12 +20,12 @@
 #include "DStarDefines.h"
 #include "Timer.h"
 #include "Utils.h"
+#include "Logger.h"
 
-#if defined(__WINDOWS__)
-#include <setupapi.h>
-#else
-#include <wx/dir.h>
-#endif
+#include <cassert>
+#include <chrono>
+#include <thread>
+#include <string>
 
 enum STATE_ICOM {
 	SI_NONE,
@@ -37,7 +37,7 @@ const unsigned int MAX_RESPONSES = 30U;
 
 const unsigned int BUFFER_LENGTH = 200U;
 
-CIcomController::CIcomController(const wxString& port) :
+CIcomController::CIcomController(const std::string& port) :
 CModem(),
 m_port(port),
 m_serial(port, SERIAL_38400, true),
@@ -45,7 +45,7 @@ m_txData(2000U),
 m_txCounter(0U),
 m_pktCounter(0U)
 {
-	wxASSERT(!port.IsEmpty());
+	assert(!port.empty());
 }
 
 CIcomController::~CIcomController()
@@ -58,16 +58,14 @@ bool CIcomController::start()
 	if (!ret)
 		return false;
 
-	Create();
-	SetPriority(100U);
-	Run();
+	m_thread = std::thread(&CIcomController::entry, this);
 
 	return true;
 }
 
-void* CIcomController::Entry()
+void CIcomController::entry()
 {
-	wxLogMessage(wxT("Starting Icom Controller thread"));
+	wxLogMessage("Starting Icom Controller thread");
 
 	// Clock every 5ms-ish
 	CTimer pollTimer(200U, 0U, 100U);
@@ -77,14 +75,14 @@ void* CIcomController::Entry()
 
 	CTimer lostTimer(200U, 5U);
 	lostTimer.start();
-	
+
 	unsigned char storeData[BUFFER_LENGTH];
 	unsigned int storeLength = 0U;
-	
+
 	unsigned int pollCount = 0U;
-	
+
 	bool connected = false;
-	
+
 	STATE_ICOM    state   = SI_NONE;
 	unsigned char seqNo   = 0U;
 	bool          txSpace = true;
@@ -113,13 +111,13 @@ void* CIcomController::Entry()
 			break;
 
 		case RTI_ERROR:
-			wxLogMessage(wxT("Stopping Icom Controller thread"));
-			return NULL;
+			wxLogMessage("Stopping Icom Controller thread");
+			return;
 
 		case RTI_HEADER: {
-				// CUtils::dump(wxT("RTI_HEADER"), buffer, length);
+				// CUtils::dump("RTI_HEADER", buffer, length);
 
-				wxMutexLocker locker(m_mutex);
+				std::lock_guard<std::mutex> lock(m_mutex);
 
 				unsigned char data[2U];
 				data[0U] = DSMTT_HEADER;
@@ -134,9 +132,9 @@ void* CIcomController::Entry()
 			break;
 
 		case RTI_DATA: {
-				// CUtils::dump(wxT("RTI_DATA"), buffer, length);
+				// CUtils::dump("RTI_DATA", buffer, length);
 
-				wxMutexLocker locker(m_mutex);
+				std::lock_guard<std::mutex> lock(m_mutex);
 
 				unsigned char data[2U];
 				data[0U] = DSMTT_DATA;
@@ -151,9 +149,9 @@ void* CIcomController::Entry()
 			break;
 
 		case RTI_EOT: {
-				// wxLogMessage(wxT("RTI_EOT"));
+				// wxLogMessage("RTI_EOT");
 
-				wxMutexLocker locker(m_mutex);
+				std::lock_guard<std::mutex> lock(m_mutex);
 
 				unsigned char data[2U];
 				data[0U] = DSMTT_EOT;
@@ -166,23 +164,23 @@ void* CIcomController::Entry()
 			break;
 
 		case RTI_PONG:
-			// wxLogMessage(wxT("RTI_PONG"));
+			// wxLogMessage("RTI_PONG");
 			if (!connected)
-				wxLogMessage(wxT("Connected to the Icom radio"));
+				wxLogMessage("Connected to the Icom radio");
 			lostTimer.start();
 			connected = true;
 			break;
 
 		case RTI_HEADER_ACK:
 			if (buffer[2U] == 0x00U) {
-				// wxLogMessage(wxT("RTI_HEADER_ACK"));
+				// wxLogMessage("RTI_HEADER_ACK");
 				if (state == SI_HEADER) {
 					storeLength = 0U;
 					retryTimer.stop();
 					txSpace = true;
 				}
 			} else {
-				wxLogMessage(wxT("RTI_HEADER_NAK"));
+				wxLogMessage("RTI_HEADER_NAK");
 			}
 
 			lostTimer.start();
@@ -190,33 +188,33 @@ void* CIcomController::Entry()
 
 		case RTI_DATA_ACK:
 			if (buffer[3U] == 0x00U) {
-				// wxLogMessage(wxT("RTI_DATA_ACK - %02X"), buffer[2U]);
+				// wxLogMessage("RTI_DATA_ACK - %02X", buffer[2U]);
 				if (state == SI_DATA && seqNo == buffer[2U]) {
 					storeLength = 0U;
 					retryTimer.stop();
 					txSpace = true;
 				}
 			} else {
-				wxLogMessage(wxT("RTI_DATA_NAK - %02X"), buffer[2U]);
+				wxLogMessage("RTI_DATA_NAK - %02X", buffer[2U]);
 			}
 
 			lostTimer.start();
 			break;
 
 		default:
-			wxLogMessage(wxT("Unknown message, type: %02X"), buffer[1U]);
-			CUtils::dump(wxT("Buffer dump"), buffer, length);
+			wxLogMessage("Unknown message, type: %02X", buffer[1U]);
+			CUtils::dump("Buffer dump", buffer, length);
 			break;
 		}
-		
+
 		if (retryTimer.isRunning() && retryTimer.hasExpired()) {
 			assert(storeLength > 0U);
 
-			// CUtils::dump(wxT("Re-Sending"), storeData, storeLength + 1U);
+			// CUtils::dump("Re-Sending", storeData, storeLength + 1U);
 
 			int ret = m_serial.write(storeData, storeLength + 1U);
 			if (ret != int(storeLength + 1U))
-				wxLogWarning(wxT("Error when writing to the Icom radio"));
+				wxLogWarning("Error when writing to the Icom radio");
 
 			retryTimer.start();
 			pollTimer.start();
@@ -228,7 +226,7 @@ void* CIcomController::Entry()
 			storeLength = storeData[0U];
 			m_txData.getData(storeData + 1U, storeLength);
 
-			// CUtils::dump(wxT("Sending"), storeData, storeLength + 1U);
+			// CUtils::dump("Sending", storeData, storeLength + 1U);
 
 			if (storeData[1U] == 0x20U) {
 				state = SI_HEADER;
@@ -240,7 +238,7 @@ void* CIcomController::Entry()
 
 			int ret = m_serial.write(storeData, storeLength + 1U);
 			if (ret != int(storeLength + 1U))
-				wxLogWarning(wxT("Error when writing to the Icom radio"));
+				wxLogWarning("Error when writing to the Icom radio");
 
 			retryTimer.start();
 			pollTimer.start();
@@ -248,15 +246,15 @@ void* CIcomController::Entry()
 			txSpace = false;
 		}
 
-		Sleep(5UL);
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
 		pollTimer.clock();
 		lostTimer.clock();
 		retryTimer.clock();
-		
+
 		if (lostTimer.hasExpired()) {
 			if (connected)
-				wxLogWarning(wxT("Lost connection to the Icom radio"));
+				wxLogWarning("Lost connection to the Icom radio");
 
 			pollTimer.setTimeout(0U, 100U);
 			pollTimer.start();
@@ -276,16 +274,14 @@ void* CIcomController::Entry()
 
 	m_serial.close();
 
-	wxLogMessage(wxT("Stopping Icom Controller thread"));
-
-	return NULL;
+	wxLogMessage("Stopping Icom Controller thread");
 }
 
 bool CIcomController::writeHeader(const CHeaderData& header)
 {
 	bool ret = m_txData.hasSpace(43U);
 	if (!ret) {
-		wxLogWarning(wxT("No space to write the header"));
+		wxLogWarning("No space to write the header");
 		return false;
 	}
 
@@ -301,47 +297,52 @@ bool CIcomController::writeHeader(const CHeaderData& header)
 	buffer[3U] = header.getFlag2();
 	buffer[4U] = header.getFlag3();
 
-	wxString rpt2 = header.getRptCall2();
-	for (unsigned int i = 0U; i < rpt2.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 5U]  = rpt2.GetChar(i);
+	std::string rpt2 = header.getRptCall2();
+	for (unsigned int i = 0U; i < rpt2.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 5U]  = rpt2[i];
 
-	wxString rpt1 = header.getRptCall1();
-	for (unsigned int i = 0U; i < rpt1.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 13U] = rpt1.GetChar(i);
+	std::string rpt1 = header.getRptCall1();
+	for (unsigned int i = 0U; i < rpt1.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 13U] = rpt1[i];
 
-	wxString your = header.getYourCall();
-	for (unsigned int i = 0U; i < your.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 21U] = your.GetChar(i);
+	std::string your = header.getYourCall();
+	for (unsigned int i = 0U; i < your.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 21U] = your[i];
 
-	wxString my1 = header.getMyCall1();
-	for (unsigned int i = 0U; i < my1.Len() && i < LONG_CALLSIGN_LENGTH; i++)
-		buffer[i + 29U] = my1.GetChar(i);
+	std::string my1 = header.getMyCall1();
+	for (unsigned int i = 0U; i < my1.size() && i < LONG_CALLSIGN_LENGTH; i++)
+		buffer[i + 29U] = my1[i];
 
-	wxString my2 = header.getMyCall2();
-	for (unsigned int i = 0U; i < my2.Len() && i < SHORT_CALLSIGN_LENGTH; i++)
-		buffer[i + 37U] = my2.GetChar(i);
+	std::string my2 = header.getMyCall2();
+	for (unsigned int i = 0U; i < my2.size() && i < SHORT_CALLSIGN_LENGTH; i++)
+		buffer[i + 37U] = my2[i];
 
 	buffer[41U] = 0xFFU;
 
 	m_txCounter  = 0U;
 	m_pktCounter = 0U;
 
-	wxMutexLocker locker(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 
 	m_txData.addData(buffer, 42U);
 
 	return true;
 }
 
+// Builds an Icom data packet (type 0x22).
+// m_txCounter is the stream sequence (increments per packet, never wraps to 0).
+// m_pktCounter counts frames within a super-frame (0-20), resetting either when
+// a data-sync pattern is detected in the AMBE payload or at 21 frames.
+// The end-of-transmission flag is bit 6 of the pktCounter byte (0x40).
 bool CIcomController::writeData(const unsigned char* data, unsigned int, bool end)
 {
 	bool ret = m_txData.hasSpace(18U);
 	if (!ret) {
-		wxLogWarning(wxT("No space to write data"));
+		wxLogWarning("No space to write data");
 		return false;
 	}
 
-	unsigned char buffer[20U];
+	unsigned char buffer[20U] = {};
 
 	if (end) {
 		buffer[0U] = 0x10U;
@@ -355,7 +356,7 @@ bool CIcomController::writeData(const unsigned char* data, unsigned int, bool en
 
 		buffer[16U] = 0xFFU;
 
-		wxMutexLocker locker(m_mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);
 
 		m_txData.addData(buffer, 17U);
 
@@ -371,14 +372,14 @@ bool CIcomController::writeData(const unsigned char* data, unsigned int, bool en
 
 	m_txCounter++;
 	m_pktCounter++;
-	if (::memcmp(buffer + VOICE_FRAME_LENGTH_BYTES, DATA_SYNC_BYTES, DATA_FRAME_LENGTH_BYTES) == 0 || m_pktCounter == 21U)
+	if (::memcmp(data + VOICE_FRAME_LENGTH_BYTES, DATA_SYNC_BYTES, DATA_FRAME_LENGTH_BYTES) == 0 || m_pktCounter == 21U)
 		m_pktCounter = 0U;
 
 	::memcpy(buffer + 4U, data, DV_FRAME_LENGTH_BYTES);
 
 	buffer[16U] = 0xFFU;
 
-	wxMutexLocker locker(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 
 	m_txData.addData(buffer, 17U);
 
@@ -395,17 +396,23 @@ bool CIcomController::isTXReady()
 	return true;
 }
 
-wxString CIcomController::getPath() const
+std::string CIcomController::getPath() const
 {
-	return wxEmptyString;
+	return std::string();
 }
 
+// Reads one Icom serial frame.
+// byte[0] = length of the remaining payload (valid values: 0x03, 0x04, 0x10, 0x2C).
+// byte[1] = message type (0x03 pong, 0x10 header, 0x12 data/EOT, 0x21 hdr-ack, 0x23 data-ack).
+// A value of 0xFF in byte[0] is a line-idle fill byte; treated as RT_TIMEOUT.
+// All reads on bytes[2..] use a 40ms timeout to avoid blocking the main loop
+// indefinitely if the radio stops mid-frame.
 RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int& length)
 {
 	// Get the start of the frame or nothing at all
 	int ret = m_serial.read(buffer, 1U);
 	if (ret < 0) {
-		wxLogError(wxT("Error when reading the length from the Icom radio"));
+		wxLogError("Error when reading the length from the Icom radio");
 		return RTI_ERROR;
 	}
 
@@ -419,13 +426,13 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 
 	// Validate the message lengths
 	if (buffer[0U] != 0x03U && buffer[0U] != 0x04U && buffer[0U] != 0x10U && buffer[0U] != 0x2CU) {
-		wxLogError(wxT("Invalid data length received from the Icom radio - 0x%02X"), length);
+		wxLogError("Invalid data length received from the Icom radio - 0x%02X", length);
 		return RTI_TIMEOUT;
 	}
 
 	ret = m_serial.read(buffer + 1U, 1U, 40U);
 	if (ret < 0) {
-		wxLogError(wxT("Error when reading the type from the Icom radio"));
+		wxLogError("Error when reading the type from the Icom radio");
 		return RTI_ERROR;
 	}
 
@@ -434,7 +441,7 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 
 	// Validate the message types
 	if (buffer[1U] != 0x03U && buffer[1U] != 0x10U && buffer[1U] != 0x12U && buffer[1U] != 0x21U && buffer[1U] != 0x23U) {
-		wxLogError(wxT("Invalid data type received from the Icom radio - 0x%02X"), buffer[1U]);
+		wxLogError("Invalid data type received from the Icom radio - 0x%02X", buffer[1U]);
 		return RTI_TIMEOUT;
 	}
 
@@ -443,7 +450,7 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 	while (offset < length) {
 		ret = m_serial.read(buffer + offset, length - offset, 40U);
 		if (ret < 0) {
-			wxLogError(wxT("Error when reading data from the Icom radio"));
+			wxLogError("Error when reading data from the Icom radio");
 			return RTI_ERROR;
 		}
 
@@ -451,12 +458,12 @@ RESP_TYPE_ICOM CIcomController::getResponse(unsigned char *buffer, unsigned int&
 			offset += ret;
 
 		if (ret == 0) {
-			// CUtils::dump(wxT("Receive timed out"), buffer, offset);
+			// CUtils::dump("Receive timed out", buffer, offset);
 			return RTI_TIMEOUT;
 		}
 	}
 
-	// CUtils::dump(wxT("Received"), buffer, length);
+	// CUtils::dump("Received", buffer, length);
 
 	switch (buffer[1U]) {
 		case 0x03U:

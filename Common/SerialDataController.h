@@ -20,9 +20,9 @@
 #ifndef SerialDataController_H
 #define SerialDataController_H
 
-#include <wx/wx.h>
+#include "StdCompat.h"
 
-#if defined(__WINDOWS__)
+#if defined(_WIN32)
 #include <windows.h>
 #endif
 
@@ -38,35 +38,37 @@ enum SERIAL_SPEED {
 	SERIAL_230400 = 230400
 };
 
+/*
+ * Binary data I/O over a serial port.
+ *
+ * Used to communicate with modem hardware (DVAP, DV-RPTR, MMDVM, etc.) that
+ * is attached via a serial or USB-serial interface.  Provides a simple
+ * read/write interface with optional read timeout (milliseconds).
+ *
+ * If assertRTS is true, the RTS line is asserted after open() — some modems
+ * use this as a hardware flow-control or power signal.
+ */
 class CSerialDataController {
 public:
-	CSerialDataController(const wxString& device, SERIAL_SPEED speed, bool assertRTS = false);
+	CSerialDataController(const std::string& device, SERIAL_SPEED speed, bool assertRTS = false);
 	~CSerialDataController();
 
 	bool open();
 
+	// Returns bytes read, 0 on timeout, or -1 on error.  timeout=0 is non-blocking.
 	int  read(unsigned char* buffer, unsigned int length, unsigned int timeout = 0U);
 	int  write(const unsigned char* buffer, unsigned int length);
 
 	void close();
 
 private:
-	wxString       m_device;
+	std::string    m_device;
 	SERIAL_SPEED   m_speed;
 	bool           m_assertRTS;
-#if defined(__WINDOWS__)
+#if defined(_WIN32)
 	HANDLE         m_handle;
-	OVERLAPPED     m_readOverlapped;
-	OVERLAPPED     m_writeOverlapped;
-	unsigned char* m_readBuffer;
-	unsigned int   m_readLength;
-	bool           m_readPending;
 #else
 	int            m_fd;
-#endif
-
-#if defined(__WINDOWS__)
-	int readNonblock(unsigned char* buffer, unsigned int length, unsigned int timeout);
 #endif
 };
 

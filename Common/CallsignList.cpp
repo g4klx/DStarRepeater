@@ -19,9 +19,10 @@
 #include "CallsignList.h"
 #include "DStarDefines.h"
 
-#include <wx/textfile.h>
+#include <fstream>
+#include <algorithm>
 
-CCallsignList::CCallsignList(const wxString& filename) :
+CCallsignList::CCallsignList(const std::string& filename) :
 m_filename(filename),
 m_callsigns()
 {
@@ -34,43 +35,41 @@ CCallsignList::~CCallsignList()
 
 bool CCallsignList::load()
 {
-	wxTextFile file;
-
-	bool res = file.Open(m_filename);
-	if (!res)
+	std::ifstream file(m_filename);
+	if (!file.is_open())
 		return false;
 
-	unsigned int lines = file.GetLineCount();
-	if (lines == 0U) {
-		file.Close();
-		return true;
+	std::string callsign;
+	while (std::getline(file, callsign)) {
+		// Strip trailing CR so CRLF files (Windows line endings) are handled correctly
+		if (!callsign.empty() && callsign.back() == '\r')
+			callsign.pop_back();
+
+		// Convert to uppercase
+		std::transform(callsign.begin(), callsign.end(), callsign.begin(), ::toupper);
+
+		// Pad to LONG_CALLSIGN_LENGTH with spaces, then truncate
+		callsign.append(8U, ' ');
+		callsign.resize(LONG_CALLSIGN_LENGTH);
+
+		m_callsigns.push_back(callsign);
 	}
 
-	m_callsigns.Alloc(lines);
-
-	wxString callsign = file.GetFirstLine();
-
-	while (!file.Eof()) {
-		callsign.MakeUpper();
-		callsign.Append(wxT("        "));
-		callsign.Truncate(LONG_CALLSIGN_LENGTH);
-
-		m_callsigns.Add(callsign);
-
-		callsign = file.GetNextLine();
-	}
-
-	file.Close();
+	file.close();
 
 	return true;
 }
 
 unsigned int CCallsignList::getCount() const
 {
-	return m_callsigns.GetCount();
+	return m_callsigns.size();
 }
 
-bool CCallsignList::isInList(const wxString& callsign) const
+bool CCallsignList::isInList(const std::string& callsign) const
 {
-	return m_callsigns.Index(callsign) != wxNOT_FOUND;
+	for (const auto& cs : m_callsigns) {
+		if (cs == callsign)
+			return true;
+	}
+	return false;
 }

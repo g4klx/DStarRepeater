@@ -14,6 +14,18 @@
 #ifndef	DStarScrambler_H
 #define	DStarScrambler_H
 
+/*
+ * D-Star bit scrambler applied to the physical RF layer.
+ *
+ * The D-Star standard mandates scrambling of the bit stream before GMSK
+ * modulation to randomise the data and avoid long runs of identical bits that
+ * would stress the PLL in receivers.  The scrambler uses a linear feedback
+ * shift register with the polynomial x^17 + x^12 + 1.
+ *
+ * process() operates in-place (inOut form) or with separate input/output
+ * buffers, and handles both bit-per-bool and packed-byte representations.
+ * reset() resets the LFSR to its initial state.
+ */
 class CDStarScrambler {
 public:
 	CDStarScrambler();
@@ -28,7 +40,7 @@ public:
 	void reset();
 
 private:
-	unsigned int m_count;
+	unsigned int m_count;   // Current position in the LFSR sequence.
 };
 
 #endif

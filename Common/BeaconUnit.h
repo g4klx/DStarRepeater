@@ -23,18 +23,25 @@
 #include "BeaconCallback.h"
 #include "DStarDefines.h"
 
-#include <wx/wx.h>
+#include "StdCompat.h"
+#include <chrono>
+#include <unordered_map>
 
+/*
+ * Maps a word or single character (e.g. "alpha", "B", " ") to a slice of the
+ * pre-recorded AMBE audio buffer.  The index file (.indx) contains one entry
+ * per line: <name> <start_frame> <frame_count>.
+ */
 class CIndexRecord {
 public:
-	CIndexRecord(const wxString& name, unsigned int start, unsigned int length) :
+	CIndexRecord(const std::string& name, unsigned int start, unsigned int length) :
 	m_name(name),
 	m_start(start),
 	m_length(length)
 	{
 	}
 
-	wxString getName() const
+	std::string getName() const
 	{
 		return m_name;
 	}
@@ -50,43 +57,65 @@ public:
 	}
 
 private:
-	wxString     m_name;
-	unsigned int m_start;
-	unsigned int m_length;
+	std::string  m_name;
+	unsigned int m_start;   // Frame offset into the AMBE buffer.
+	unsigned int m_length;  // Number of AMBE frames for this word/character.
 };
 
-WX_DECLARE_STRING_HASH_MAP(CIndexRecord*, CIndexList_t);
+typedef std::unordered_map<std::string, CIndexRecord*> CIndexList_t;
 
+/*
+ * Generates a voice ID beacon by assembling pre-recorded AMBE audio frames.
+ *
+ * On construction the .ambe file (raw VOICE_FRAME_LENGTH_BYTES chunks) and
+ * its companion .indx file are loaded for the configured language.  When
+ * sendBeacon() is called, spellCallsign() looks up each character of the
+ * callsign in the index and copies the corresponding AMBE frames into an
+ * internal playback buffer.  The last character is spoken phonetically
+ * (e.g. "A" -> "alpha") to follow amateur radio convention.
+ *
+ * clock() is called every DSTAR_FRAME_TIME_MS (20 ms) by the repeater thread.
+ * It compares elapsed wall-clock time against m_out (frames dispatched) to
+ * pace frame delivery to the transmitter without requiring a dedicated thread.
+ *
+ * If no voice files are available, a silent beacon (null AMBE frames) with
+ * slow-data text is still transmitted.
+ */
 class CBeaconUnit {
 public:
-	CBeaconUnit(IBeaconCallback* handler, const wxString& callsign, const wxString& text, bool voice, TEXT_LANG language);
+	CBeaconUnit(IBeaconCallback* handler, const std::string& callsign, const std::string& text, bool voice, TEXT_LANG language);
 	~CBeaconUnit();
 
+	// Assembles the beacon frames and signals the repeater thread to begin TX.
 	void sendBeacon();
 
+	// Called every repeater tick; releases frames to the transmitter at air rate.
 	void clock();
 
 private:
-	unsigned char*   m_ambe;
-	unsigned int     m_ambeLength;
-	unsigned char*   m_data;
-	unsigned int     m_dataLength;
-	CIndexList_t     m_index;
+	unsigned char*   m_ambe;        // Raw AMBE frames loaded from the .ambe file.
+	unsigned int     m_ambeLength;  // Total frames available in m_ambe.
+	unsigned char*   m_data;        // Assembled DV frames ready for transmission.
+	unsigned int     m_dataLength;  // Bytes written into m_data so far.
+	CIndexList_t     m_index;       // Word/character -> AMBE frame mapping.
 	TEXT_LANG        m_language;
 	IBeaconCallback* m_handler;
-	wxString         m_callsign;
-	CSlowDataEncoder m_encoder;
-	unsigned int     m_in;
-	unsigned int     m_out;
-	unsigned int     m_seqNo;
-	wxStopWatch      m_time;
+	std::string      m_callsign;
+	CSlowDataEncoder m_encoder;     // Encodes the beacon text into slow-data fields.
+	unsigned int     m_in;          // Total frames queued into m_data.
+	unsigned int     m_out;         // Frames dispatched to the transmitter so far.
+	unsigned int     m_seqNo;       // Slow-data sequence counter (0–20).
+	std::chrono::steady_clock::time_point m_time;  // Wall-clock start time of the beacon.
 	bool             m_sending;
 
-	bool lookup(const wxString& id);
-	void spellCallsign(const wxString& callsign);
+	// Appends AMBE frames for a word/character from the index into m_data.
+	bool lookup(const std::string& id);
+	// Spells out the callsign character by character; the last character uses
+	// the phonetic alphabet (A→alpha, B→bravo, C→charlie, D→delta).
+	void spellCallsign(const std::string& callsign);
 
-	bool readAMBE(const wxString& name);
-	bool readIndex(const wxString& name);
+	bool readAMBE(const std::string& name);
+	bool readIndex(const std::string& name);
 };
 
 #endif

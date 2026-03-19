@@ -18,12 +18,20 @@
 
 #include "AnnouncementUnit.h"
 
-#include <wx/filename.h>
-#include <wx/file.h>
+#include <cassert>
+#include <cstdio>
+#include <cstring>
+#if defined(_WIN32)
+#include <io.h>
+#define access _access
+#define F_OK 0
+#else
+#include <unistd.h>
+#endif
 
-const wxString GLOBAL_FILE_NAME = wxT("Announce");
+static const std::string GLOBAL_FILE_NAME = "Announce";
 
-CAnnouncementUnit::CAnnouncementUnit(IAnnouncementCallback* handler, const wxString& callsign) :
+CAnnouncementUnit::CAnnouncementUnit(IAnnouncementCallback* handler, const std::string& callsign) :
 m_handler(handler),
 m_localFileName(),
 m_reader(),
@@ -32,14 +40,23 @@ m_time(),
 m_out(0U),
 m_sending(false)
 {
-	wxASSERT(handler != NULL);
+	assert(handler != nullptr);
 
-	m_localFileName.Printf(wxT("Announce %s"), callsign.c_str());
-#if !defined(__WINDOWS__)
-	m_localFileName.Replace(wxT(" "), wxT("_"));
+	m_localFileName = "Announce " + callsign;
+
+	// Replace spaces with underscores in the filename
+	size_t pos = 0;
+	while ((pos = m_localFileName.find(' ', pos)) != std::string::npos) {
+		m_localFileName.replace(pos, 1, "_");
+		pos += 1;
+	}
+
+#if defined(_WIN32)
+	const char* home = getenv("USERPROFILE");
+#else
+	const char* home = getenv("HOME");
 #endif
-
-	m_writer.setDirectory(wxFileName::GetHomeDir());
+	m_writer.setDirectory(std::string(home != nullptr ? home : ""));
 }
 
 CAnnouncementUnit::~CAnnouncementUnit()
@@ -65,23 +82,33 @@ bool CAnnouncementUnit::writeData(const unsigned char* data, unsigned int length
 
 void CAnnouncementUnit::deleteAnnouncement()
 {
-	wxFileName fileName(wxFileName::GetHomeDir(), m_localFileName, wxT("dvtool"));
+#if defined(_WIN32)
+	const char* home = getenv("USERPROFILE");
+#else
+	const char* home = getenv("HOME");
+#endif
+	std::string filePath = std::string(home != nullptr ? home : "") + "/" + m_localFileName + ".dvtool";
 
-	if (wxFile::Exists(fileName.GetFullPath()))
-		::wxRemoveFile(fileName.GetFullPath());
+	if (access(filePath.c_str(), F_OK) == 0)
+		::remove(filePath.c_str());
 }
 
 void CAnnouncementUnit::startAnnouncement()
 {
-	wxFileName fileName1(wxFileName::GetHomeDir(), m_localFileName, wxT("dvtool"));
-	wxFileName fileName2(wxFileName::GetHomeDir(), GLOBAL_FILE_NAME, wxT("dvtool"));
+#if defined(_WIN32)
+	const char* home = getenv("USERPROFILE");
+#else
+	const char* home = getenv("HOME");
+#endif
+	std::string filePath1 = std::string(home != nullptr ? home : "") + "/" + m_localFileName + ".dvtool";
+	std::string filePath2 = std::string(home != nullptr ? home : "") + "/" + GLOBAL_FILE_NAME + ".dvtool";
 
-	if (wxFile::Exists(fileName1.GetFullPath())) {
-		bool ret = m_reader.open(fileName1.GetFullPath());
+	if (access(filePath1.c_str(), F_OK) == 0) {
+		bool ret = m_reader.open(filePath1);
 		if (!ret)
 			return;
-	} else if (wxFile::Exists(fileName2.GetFullPath())) {
-		bool ret = m_reader.open(fileName2.GetFullPath());
+	} else if (access(filePath2.c_str(), F_OK) == 0) {
+		bool ret = m_reader.open(filePath2);
 		if (!ret)
 			return;
 	} else {
@@ -90,14 +117,12 @@ void CAnnouncementUnit::startAnnouncement()
 
 	DVTFR_TYPE type = m_reader.read();
 	if (type != DVTFR_HEADER) {
-		wxLogError(wxT("Invalid header element in the file - %d"), int(type));
 		m_reader.close();
 		return;
 	}
 
 	CHeaderData* header = m_reader.readHeader();
-	if (header == NULL) {
-		wxLogError(wxT("NULL header element in the file"));
+	if (header == nullptr) {
 		m_reader.close();
 		return;
 	}
@@ -107,7 +132,7 @@ void CAnnouncementUnit::startAnnouncement()
 
 	m_handler->transmitAnnouncementHeader(header);
 
-	m_time.Start();
+	m_time = std::chrono::steady_clock::now();
 
 	m_out = 0U;
 	m_sending = true;
@@ -118,12 +143,11 @@ void CAnnouncementUnit::clock()
 	if (!m_sending)
 		return;
 
-	unsigned int needed = m_time.Time() / DSTAR_FRAME_TIME_MS;
+	unsigned int needed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_time).count() / DSTAR_FRAME_TIME_MS;
 
 	while (m_out < needed) {
 		DVTFR_TYPE type = m_reader.read();
 		if (type != DVTFR_DATA) {
-			wxLogError(wxT("Invalid data element in the file - %d"), int(type));
 			m_handler->transmitAnnouncementData(END_PATTERN_BYTES, DV_FRAME_LENGTH_BYTES, true);
 			m_reader.close();
 			m_sending = false;

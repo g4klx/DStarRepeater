@@ -1,29 +1,32 @@
 # DStarRepeater Configuration Reference
 
-> **Note:** The config parser treats any line beginning with `#` as a
-> comment, and blank lines are skipped. Use `dstarrepeater.example` as
-> your starting point for a clean config.
+The configuration file uses INI format with `[Section]` headers, `Key=Value` pairs, and `#` comments. The format is compatible with MMDVMHost.
 
-**Config file location:** `/etc/dstarrepeater`
-(or `/etc/dstarrepeater_<name>` when using the `-name` command line option)
+To get started, copy the example config and edit for your installation:
+```bash
+sudo cp /etc/dstarrepeater/dstarrepeater.ini.example /etc/dstarrepeater/dstarrepeater.ini
+sudo nano /etc/dstarrepeater/dstarrepeater.ini
+```
 
-**Format:** `key=value` — one setting per line, no spaces around the `=`.
-Boolean values use `0` for off/false and `1` for on/true.
+Then start the daemon:
+```bash
+dstarrepeaterd /etc/dstarrepeater/dstarrepeater.ini
+```
 
 ---
 
-## Callsign Settings
+## [General]
 
-| Setting | Description |
-|---------|-------------|
-| `callsign=GB3IN  C` | Repeater callsign, padded to 8 characters. 7-character base callsign + 1-character module suffix (A, B, C, D, or E). |
-| `gateway=` | Gateway callsign, padded to 8 characters (e.g. `GB3IN  G`). Leave empty if not linked to a gateway. |
-| `mode=0` | Operating mode — see [Mode Values](#mode-values) below. |
-| `ack=1` | Acknowledgement type — see [Ack Values](#ack-values) below. Forced to `0` in Gateway, TX Only, RX Only, and TX and RX modes. |
-| `restriction=0` | `1` = only whitelisted callsigns accepted. |
-| `rpt1Validation=1` | `1` = only accept headers addressed to this repeater. Forced to `1` in Gateway mode. |
-| `dtmfBlanking=1` | `1` = mute DTMF tones from the audio stream. |
-| `errorReply=1` | `1` = reply with an error message for invalid commands. |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Callsign` | `GB3IN  C` | Repeater callsign, padded to 8 characters. 7-character base + 1-character module suffix (A–E). |
+| `Gateway` | *(empty)* | Gateway callsign, padded to 8 characters (e.g. `GB3IN  G`). Leave empty if not linked. |
+| `Mode` | `0` | Operating mode — see [Mode Values](#mode-values) below. |
+| `Ack` | `1` | Acknowledgement type — see [Ack Values](#ack-values). Forced to `0` in Gateway, TX Only, RX Only, and TX+RX modes. |
+| `Restriction` | `0` | `1` = only whitelisted callsigns accepted. |
+| `RPT1Validation` | `1` | `1` = only accept headers addressed to this repeater. |
+| `DTMFBlanking` | `1` | `1` = mute DTMF tones from the audio stream. |
+| `ErrorReply` | `1` | `1` = reply with error message for invalid commands. |
 
 ### Mode Values
 
@@ -32,9 +35,9 @@ Boolean values use `0` for off/false and `1` for on/true.
 | `0` | Duplex | Full duplex repeater (simultaneous TX and RX) |
 | `1` | Simplex | Simplex repeater |
 | `2` | Gateway | Gateway mode (ack forced off, RPT1 validation forced on) |
-| `3` | TX Only | Transmit only (ack forced off) |
-| `4` | RX Only | Receive only (ack forced off) |
-| `5` | TX and RX | Sequential transmit then receive |
+| `3` | TX Only | Transmit only |
+| `4` | RX Only | Receive only |
+| `5` | TX and RX | Sequential transmit then receive (split-site) |
 
 ### Ack Values
 
@@ -46,58 +49,82 @@ Boolean values use `0` for off/false and `1` for on/true.
 
 ---
 
-## Network Settings
+## [Log]
 
-| Setting | Description |
-|---------|-------------|
-| `gatewayAddress=127.0.0.1` | IP address of the [ircDDBGateway](https://github.com/g4klx/ircDDBGateway) or [DStarGateway](https://github.com/g4klx/DStarGateway). |
-| `gatewayPort=20010` | UDP port the gateway is listening on. |
-| `localAddress=127.0.0.1` | Local IP address to bind for gateway communication. |
-| `localPort=20011` | Local UDP port for gateway communication. |
-| `networkName=` | Network name identifier for multi-repeater setups. Leave empty for a single repeater. |
+Logging levels match MMDVMHost: `0`=None, `1`=Debug, `2`=Message, `3`=Info, `4`=Warning, `5`=Error, `6`=Fatal. Higher values are more selective (fewer messages).
 
----
-
-## Modem Type
-
-| Setting | Description |
-|---------|-------------|
-| `modemType=DVAP` | The type of modem hardware connected to this repeater. |
-
-Must be one of the following strings (case-sensitive):
-
-- `DVAP`
-- `DVMEGA`
-- `DV-RPTR V1`
-- `DV-RPTR V2`
-- `DV-RPTR V3`
-- `GMSK Modem`
-- `MMDVM`
-- `Sound Card`
-- `Split`
-- `Icom Access Point/Terminal Mode`
-
-Only the settings for your selected modem type need to be configured — see [Modem-Specific Settings](#modem-specific-settings).
+| Key | Default | Description |
+|-----|---------|-------------|
+| `FilePath` | `/var/log` | Directory for daily log files (`dstarrepeaterd-YYYY-MM-DD.log`). |
+| `FileLevel` | `2` | Minimum level to write to log file. `0` = no file logging. |
+| `DisplayLevel` | `2` | Minimum level to write to stdout. `0` = no stdout output. |
+| `MQTTLevel` | `2` | Minimum level to forward to MQTT. `0` = no MQTT logging. |
 
 ---
 
-## Timing
+## [Paths]
 
-| Setting | Description |
-|---------|-------------|
-| `timeout=180` | Transmission timeout in seconds. `0` to disable. |
-| `ackTime=500` | Acknowledgement delay in milliseconds. |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Data` | `/usr/share/dstarrepeater` | Directory containing AMBE voice beacon files (`.ambe` and `.indx`). |
+| `Audio` | `/var/log` | Directory for DVTool audio recordings and announcements. |
 
 ---
 
-## Beacon
+## [Network]
 
-| Setting | Description |
-|---------|-------------|
-| `beaconTime=600` | Beacon interval in seconds. `0` to disable. |
-| `beaconText=D-Star Repeater` | Text transmitted in the beacon slow data field. |
-| `beaconVoice=0` | `1` = transmit a voice beacon in addition to data. |
-| `language=0` | Language for voice beacon text-to-speech — see [Language Values](#language-values) below. |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `GatewayAddress` | `127.0.0.1` | IP address of the gateway (ircDDBGateway or DStarGateway). |
+| `GatewayPort` | `20010` | UDP port the gateway is listening on. |
+| `LocalAddress` | `127.0.0.1` | Local IP address to bind. |
+| `LocalPort` | `20011` | Local UDP port. |
+| `Name` | *(empty)* | Network name for multi-repeater setups. |
+
+---
+
+## [Modem]
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Type` | `DVAP` | Hardware modem type (case-sensitive). |
+
+Valid modem types:
+
+| Value | Hardware |
+|-------|----------|
+| `DVAP` | DVAP USB Dongle |
+| `DVMEGA` | DV-Mega board |
+| `DV-RPTR V1` | DV-RPTR Version 1 |
+| `DV-RPTR V2` | DV-RPTR Version 2 |
+| `DV-RPTR V3` | DV-RPTR Version 3 |
+| `GMSK Modem` | GMSK modem (Dutch*STAR) |
+| `MMDVM` | Multi-Mode Digital Voice Modem |
+| `Sound Card` | Sound card modem (ALSA/PortAudio) |
+| `Split` | Multi-receiver split-site |
+| `Icom Access Point/Terminal Mode` | Icom radio in AP/terminal mode |
+
+Only configure the section matching your modem type.
+
+---
+
+## [Times]
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Timeout` | `180` | Transmission timeout in seconds. `0` to disable. |
+| `AckTime` | `500` | Acknowledgement delay in milliseconds. |
+
+---
+
+## [Beacon]
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Time` | `600` | Beacon interval in seconds. `0` to disable. |
+| `Text` | `D-Star Repeater` | Text transmitted in the beacon slow data field. |
+| `Voice` | `0` | `1` = transmit a voice beacon in addition to data. |
+| `Language` | `0` | Language for voice beacon — see [Language Values](#language-values). |
 
 ### Language Values
 
@@ -117,233 +144,224 @@ Only the settings for your selected modem type need to be configured — see [Mo
 
 ---
 
-## Announcement
+## [Announcement]
 
-| Setting | Description |
-|---------|-------------|
-| `announcementEnabled=0` | `1` = enable the announcement/recording feature. |
-| `announcementTime=500` | Announcement playback interval in milliseconds. |
-| `announcementRecordRPT1=` | RPT1 callsign that triggers recording. |
-| `announcementRecordRPT2=` | RPT2 callsign that triggers recording. |
-| `announcementDeleteRPT1=` | RPT1 callsign that triggers deletion. |
-| `announcementDeleteRPT2=` | RPT2 callsign that triggers deletion. |
-
----
-
-## DTMF Control
-
-| Setting | Description |
-|---------|-------------|
-| `controlEnabled=0` | `1` = enable DTMF remote control. |
-| `controlRPT1=` | RPT1 callsign required for control commands. |
-| `controlRPT2=` | RPT2 callsign required for control commands. |
-| `controlShutdown=` | DTMF sequence to remotely shut down the repeater. |
-| `controlStartup=` | DTMF sequence to remotely start up the repeater. |
-| `controlStatus1=` | DTMF sequence to trigger status message 1. |
-| `controlStatus2=` | DTMF sequence to trigger status message 2. |
-| `controlStatus3=` | DTMF sequence to trigger status message 3. |
-| `controlStatus4=` | DTMF sequence to trigger status message 4. |
-| `controlStatus5=` | DTMF sequence to trigger status message 5. |
-| `controlCommand1=` | DTMF sequence for custom command 1. |
-| `controlCommand1Line=` | Shell command executed when command 1 is received. |
-| `controlCommand2=` | DTMF sequence for custom command 2. |
-| `controlCommand2Line=` | Shell command executed when command 2 is received. |
-| `controlCommand3=` | DTMF sequence for custom command 3. |
-| `controlCommand3Line=` | Shell command executed when command 3 is received. |
-| `controlCommand4=` | DTMF sequence for custom command 4. |
-| `controlCommand4Line=` | Shell command executed when command 4 is received. |
-| `controlCommand5=` | DTMF sequence for custom command 5. |
-| `controlCommand5Line=` | Shell command executed when command 5 is received. |
-| `controlCommand6=` | DTMF sequence for custom command 6. |
-| `controlCommand6Line=` | Shell command executed when command 6 is received. |
-| `controlOutput1=` | DTMF sequence to toggle output relay 1. |
-| `controlOutput2=` | DTMF sequence to toggle output relay 2. |
-| `controlOutput3=` | DTMF sequence to toggle output relay 3. |
-| `controlOutput4=` | DTMF sequence to toggle output relay 4. |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Enabled` | `0` | `1` = enable announcement recording and playback. |
+| `Time` | `500` | Announcement playback interval in seconds. |
+| `RecordRPT1` | *(empty)* | RPT1 callsign that triggers recording. |
+| `RecordRPT2` | *(empty)* | RPT2 callsign that triggers recording. |
+| `DeleteRPT1` | *(empty)* | RPT1 callsign that triggers deletion. |
+| `DeleteRPT2` | *(empty)* | RPT2 callsign that triggers deletion. |
 
 ---
 
-## External Controller
+## [Control]
 
-| Setting | Description |
-|---------|-------------|
-| `controllerType=` | Hardware controller type for PTT, LEDs, and relays — see [Controller Types](#controller-types) below. Leave empty for none. |
-| `serialConfig=1` | Hardware config selection (1–5). Selects pin/output mappings on the controller. |
-| `pttInvert=0` | `1` = invert PTT output (active low). |
-| `activeHangTime=0` | Seconds to hold active state after last transmission ends. `0` to disable. |
+DTMF remote control via D-Star headers. When enabled, specific YOURCALL values trigger actions.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Enabled` | `0` | `1` = enable DTMF remote control. |
+| `RPT1` | *(empty)* | RPT1 callsign required for control commands. |
+| `RPT2` | *(empty)* | RPT2 callsign required for control commands. |
+| `Shutdown` | *(empty)* | YOURCALL value to shut down the repeater. |
+| `Startup` | *(empty)* | YOURCALL value to start up the repeater. |
+| `Status1`–`Status5` | *(empty)* | YOURCALL values to trigger status messages 1–5. |
+| `Command1`–`Command6` | *(empty)* | YOURCALL values for custom commands 1–6. |
+| `Command1Line`–`Command6Line` | *(empty)* | Shell command executed when the corresponding command is triggered. |
+| `Output1`–`Output4` | *(empty)* | YOURCALL values to toggle output relays 1–4. |
+
+---
+
+## [Controller]
+
+External hardware controller for PTT, LEDs, and relay outputs.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Type` | *(empty)* | Controller type — see [Controller Types](#controller-types). |
+| `SerialConfig` | `1` | Pin/output configuration preset (1–5). |
+| `PTTInvert` | `0` | `1` = invert PTT output (active low). |
+| `ActiveHangTime` | `0` | Seconds to hold active state after last transmission. `0` to disable. |
 
 ### Controller Types
 
 | Value | Description |
 |-------|-------------|
-| *(empty)* | No controller |
+| *(empty)* | No controller (dummy) |
 | `GPIO` | Raspberry Pi GPIO pins |
 | `UDRC` | UDRC board (Raspberry Pi) |
-| `Velleman K8055 - 0` | Velleman K8055 USB board at address 0–3 |
-| `URI USB - 1` | URI USB relay card at address 1–6 |
+| `Velleman K8055 - 0` | Velleman K8055 USB board (address 0–3) |
+| `URI USB - 1` | URI USB relay card (address 1–6) |
 | `Serial - /dev/ttyUSB0` | Serial port controller |
 | `Arduino - /dev/ttyUSB0` | Arduino controller via serial |
 
 ---
 
-## Output Relay Defaults
+## [Outputs]
 
-| Setting | Description |
-|---------|-------------|
-| `output1=0` | Default state of output relay 1 at startup. `1` = on. |
-| `output2=0` | Default state of output relay 2 at startup. `1` = on. |
-| `output3=0` | Default state of output relay 3 at startup. `1` = on. |
-| `output4=0` | Default state of output relay 4 at startup. `1` = on. |
+Default state of output relays at startup.
 
----
-
-## Logging
-
-| Setting | Description |
-|---------|-------------|
-| `logging=0` | `1` = enable logging to file. |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Output1` | `0` | Output relay 1. `1` = on at startup. |
+| `Output2` | `0` | Output relay 2. |
+| `Output3` | `0` | Output relay 3. |
+| `Output4` | `0` | Output relay 4. |
 
 ---
 
-## Window Position (GUI only)
+## [Frame Logging]
 
-| Setting | Description |
-|---------|-------------|
-| `windowX=-1` | Window X position. `-1` for system default. |
-| `windowY=-1` | Window Y position. `-1` for system default. |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Enabled` | `0` | `1` = record all D-Star frames to `.dvtool` files in the audio directory. |
+
+---
+
+## [Whitelist] / [Blacklist] / [Greylist]
+
+Callsign access control lists. Each takes a single `File` key pointing to a text file with one callsign per line.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `File` | *(not set)* | Full path to the list file. Leave commented out to disable. |
+
+Example:
+```ini
+[Whitelist]
+File=/etc/dstarrepeater/rptr_whitelist.dat
+```
 
 ---
 
 ## Modem-Specific Settings
 
-Only configure the section that matches your `modemType`.
+Only configure the section matching your `[Modem] Type`.
 
-### DVAP
+### [DVAP]
 
-| Setting | Description |
-|---------|-------------|
-| `dvapPort=` | Serial port (e.g. `/dev/ttyUSB0`). |
-| `dvapFrequency=145500000` | Operating frequency in Hz (e.g. `438500000` = 438.500 MHz). |
-| `dvapPower=10` | Transmit power in dBm. |
-| `dvapSquelch=-100` | Squelch level in dBm. Signals below this are ignored. |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Port` | *(empty)* | Serial port (e.g. `/dev/ttyUSB0`). |
+| `Frequency` | `145500000` | Operating frequency in Hz. |
+| `Power` | `10` | Transmit power in dBm. |
+| `Squelch` | `-100` | Squelch threshold in dBm. |
 
-### GMSK Modem
+### [GMSK]
 
-| Setting | Description |
-|---------|-------------|
-| `gmskAddress=768` | USB address of the GMSK modem (decimal). Default 768 = 0x0300 hex. |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `InterfaceType` | `0` | `0` = libUSB, `1` = direct/serial. |
+| `Address` | `768` | USB address in decimal (768 = 0x0300). |
 
-### DV-RPTR V1
+### [DV-RPTR V1]
 
-| Setting | Description |
-|---------|-------------|
-| `dvrptr1Port=` | Serial port (e.g. `/dev/ttyUSB0`). |
-| `dvrptr1RXInvert=0` | `1` = invert received signal polarity. |
-| `dvrptr1TXInvert=0` | `1` = invert transmitted signal polarity. |
-| `dvrptr1Channel=0` | `0` = Channel A, `1` = Channel B. |
-| `dvrptr1ModLevel=20` | Modulation level (0–100%). |
-| `dvrptr1TXDelay=150` | Transmit delay in milliseconds. |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Port` | *(empty)* | Serial port (e.g. `/dev/ttyUSB0`). |
+| `RXInvert` | `0` | `1` = invert received signal polarity. |
+| `TXInvert` | `0` | `1` = invert transmitted signal polarity. |
+| `Channel` | `0` | `0` = Channel A, `1` = Channel B. |
+| `ModLevel` | `20` | Modulation level (0–100%). |
+| `TXDelay` | `150` | Transmit delay in milliseconds. |
 
-### DV-RPTR V2
+### [DV-RPTR V2]
 
-| Setting | Description |
-|---------|-------------|
-| `dvrptr2Connection=0` | `0` = USB, `1` = Network. |
-| `dvrptr2USBPort=` | USB serial port (when connection = `0`). |
-| `dvrptr2Address=127.0.0.1` | Network address (when connection = `1`). |
-| `dvrptr2Port=0` | Network port (when connection = `1`). |
-| `dvrptr2TXInvert=0` | `1` = invert transmitted signal polarity. |
-| `dvrptr2ModLevel=20` | Modulation level (0–100%). |
-| `dvrptr2TXDelay=150` | Transmit delay in milliseconds. |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Connection` | `0` | `0` = USB, `1` = Network. |
+| `USBPort` | *(empty)* | USB serial port. |
+| `Address` | `127.0.0.1` | Network address (when Connection=1). |
+| `Port` | `0` | Network port (when Connection=1). |
+| `TXInvert` | `0` | `1` = invert transmitted signal polarity. |
+| `ModLevel` | `20` | Modulation level (0–100%). |
+| `TXDelay` | `150` | Transmit delay in milliseconds. |
 
-### DV-RPTR V3
+### [DV-RPTR V3]
 
-| Setting | Description |
-|---------|-------------|
-| `dvrptr3Connection=0` | `0` = USB, `1` = Network. |
-| `dvrptr3USBPort=` | USB serial port (when connection = `0`). |
-| `dvrptr3Address=127.0.0.1` | Network address (when connection = `1`). |
-| `dvrptr3Port=0` | Network port (when connection = `1`). |
-| `dvrptr3TXInvert=0` | `1` = invert transmitted signal polarity. |
-| `dvrptr3ModLevel=20` | Modulation level (0–100%). |
-| `dvrptr3TXDelay=150` | Transmit delay in milliseconds. |
+Same keys as [DV-RPTR V2].
 
-### DVMEGA
+### [DVMEGA]
 
-| Setting | Description |
-|---------|-------------|
-| `dvmegaPort=` | Serial port (e.g. `/dev/ttyAMA0`). |
-| `dvmegaVariant=0` | `0` = Modem, `1` = Radio 2m, `2` = Radio 70cm, `3` = Radio 2m/70cm. |
-| `dvmegaRXInvert=0` | `1` = invert received signal polarity. |
-| `dvmegaTXInvert=0` | `1` = invert transmitted signal polarity. |
-| `dvmegaTXDelay=150` | Transmit delay in milliseconds. |
-| `dvmegaRXFrequency=145500000` | Receive frequency in Hz (radio variants only). |
-| `dvmegaTXFrequency=145500000` | Transmit frequency in Hz (radio variants only). |
-| `dvmegaPower=100` | Transmit power as a percentage (0–100%, radio variants only). |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Port` | *(empty)* | Serial port (e.g. `/dev/ttyAMA0`). |
+| `Variant` | `0` | `0` = Modem, `1` = Radio 2m, `2` = Radio 70cm, `3` = Radio 2m/70cm. |
+| `RXInvert` | `0` | `1` = invert received signal. |
+| `TXInvert` | `0` | `1` = invert transmitted signal. |
+| `TXDelay` | `150` | Transmit delay in milliseconds. |
+| `RXFrequency` | `145500000` | Receive frequency in Hz (radio variants only). |
+| `TXFrequency` | `145500000` | Transmit frequency in Hz (radio variants only). |
+| `Power` | `100` | Transmit power 0–100% (radio variants only). |
 
-### MMDVM
+### [MMDVM]
 
-| Setting | Description |
-|---------|-------------|
-| `mmdvmPort=` | Serial port (e.g. `/dev/ttyACM0`). |
-| `mmdvmRXInvert=0` | `1` = invert received signal polarity. |
-| `mmdvmTXInvert=0` | `1` = invert transmitted signal polarity. |
-| `mmdvmPTTInvert=0` | `1` = invert PTT signal. |
-| `mmdvmTXDelay=50` | Transmit delay in milliseconds. |
-| `mmdvmRXLevel=100` | Receive audio level (0–100%). |
-| `mmdvmTXLevel=100` | Transmit audio level (0–100%). |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Port` | *(empty)* | Serial port (e.g. `/dev/ttyACM0`). |
+| `RXInvert` | `0` | `1` = invert received signal. |
+| `TXInvert` | `0` | `1` = invert transmitted signal. |
+| `PTTInvert` | `0` | `1` = invert PTT signal. |
+| `TXDelay` | `50` | Transmit delay in milliseconds. |
+| `RXLevel` | `100` | Receive level (0–100%). |
+| `TXLevel` | `100` | Transmit level (0–100%). |
 
-### Sound Card
+### [Sound Card]
 
-| Setting | Description |
-|---------|-------------|
-| `soundCardRXDevice=` | Sound card device name for receiving audio. |
-| `soundCardTXDevice=` | Sound card device name for transmitting audio. |
-| `soundCardRXInvert=0` | `1` = invert received signal polarity. |
-| `soundCardTXInvert=0` | `1` = invert transmitted signal polarity. |
-| `soundCardRXLevel=1.0000` | Receive level multiplier (1.0 = unity gain). |
-| `soundCardTXLevel=1.0000` | Transmit level multiplier (1.0 = unity gain). |
-| `soundCardTXDelay=150` | Transmit delay in milliseconds. |
-| `soundCardTXTail=50` | Transmit tail in milliseconds (extra carrier after last frame). |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `RXDevice` | *(empty)* | Sound card device name for receiving. |
+| `TXDevice` | *(empty)* | Sound card device name for transmitting. |
+| `RXInvert` | `0` | `1` = invert received signal. |
+| `TXInvert` | `0` | `1` = invert transmitted signal. |
+| `RXLevel` | `1.0` | Receive level multiplier (1.0 = unity gain). |
+| `TXLevel` | `1.0` | Transmit level multiplier (1.0 = unity gain). |
+| `TXDelay` | `150` | Transmit delay in milliseconds. |
+| `TXTail` | `50` | Transmit tail in milliseconds (extra carrier after last frame). |
 
-### Icom Access Point/Terminal Mode
+### [Split]
 
-| Setting | Description |
-|---------|-------------|
-| `icomPort=` | Serial port (e.g. `/dev/ttyUSB0`). |
+Multi-receiver split-site configuration using UDP.
 
-### Split
+| Key | Default | Description |
+|-----|---------|-------------|
+| `LocalAddress` | *(empty)* | Local IP address for split communication. |
+| `LocalPort` | `0` | Local UDP port. |
+| `Timeout` | `0` | Timeout in milliseconds. `0` to disable. |
 
-| Setting | Description |
-|---------|-------------|
-| `splitLocalAddress=` | Local IP address for split RX/TX communication. |
-| `splitLocalPort=0` | Local UDP port for split communication. |
-| `splitTimeout=0` | Split timeout in seconds. `0` to disable. |
+TX/RX names are configured as indexed keys: `TXName0`–`TXName4` and `RXName0`–`RXName24`.
 
-Split TX/RX names are stored as indexed entries (`splitTXName0`, `splitRXName0`, etc.) — up to 5 transmitters and 25 receivers.
+### [Icom]
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Port` | *(empty)* | Serial port (e.g. `/dev/ttyUSB0`). |
 
 ---
 
-## MQTT Settings
+## [MQTT]
 
-*Only used when built with `make MQTT=1`. See [MQTT.md](MQTT.md) for full details on topics, JSON format, and Display-Driver compatibility.*
+*Only used when built with `make MQTT=1`. See [MQTT.md](MQTT.md) for full details.*
 
-| Setting | Description |
-|---------|-------------|
-| `mqttHost=127.0.0.1` | MQTT broker hostname or IP address. Set to empty to disable MQTT at runtime even when compiled in. |
-| `mqttPort=1883` | MQTT broker port. |
-| `mqttAuth=0` | `1` = authenticate with the broker using `mqttUsername` and `mqttPassword`. |
-| `mqttUsername=` | Broker username (when `mqttAuth=1`). |
-| `mqttPassword=` | Broker password (when `mqttAuth=1`). |
-| `mqttKeepalive=60` | Keepalive interval in seconds. Minimum 5. |
-| `mqttName=dstar-repeater` | Client name and topic prefix for all published messages. |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Host` | `127.0.0.1` | MQTT broker hostname or IP. Empty to disable MQTT at runtime. |
+| `Port` | `1883` | Broker port. |
+| `Auth` | `0` | `1` = authenticate with username/password. |
+| `Username` | *(empty)* | Broker username (when Auth=1). |
+| `Password` | *(empty)* | Broker password (when Auth=1). |
+| `Keepalive` | `60` | Keepalive interval in seconds. |
+| `Name` | `dstar-repeater` | Client name and topic prefix. |
 
 ### MQTT Topics
 
-With the default `mqttName` of `dstar-repeater`, the following topics are published:
+With `Name=dstar-repeater`:
 
 | Topic | Content |
 |-------|---------|
-| `dstar-repeater/log` | Timestamped log messages, filtered by severity. |
-| `dstar-repeater/status` | JSON repeater status, published once per second. |
-| `dstar-repeater/json` | Display-Driver-compatible events at state transitions. |
+| `dstar-repeater/log` | Timestamped log messages (filtered by MQTTLevel). |
+| `dstar-repeater/status` | JSON repeater status (1/sec). |
+| `dstar-repeater/json` | Display-Driver-compatible D-Star events. |
