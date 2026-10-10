@@ -4,7 +4,7 @@ OBJECTS = AMBEFEC.o AnnouncementUnit.o ArduinoController.o BeaconUnit.o Callsign
 	  ExternalController.o FIRFilter.o GatewayProtocolHandler.o GMSKController.o GMSKModem.o GMSKModemLibUsb.o Golay.o \
 	  GPIOController.o HardwareController.o HeaderData.o IcomController.o K8055Controller.o Logger.o MMDVMController.o \
 	  Modem.o OutputQueue.o RepeaterProtocolHandler.o SerialDataController.o SerialLineController.o SerialPortSelector.o \
-	  SlowDataDecoder.o SlowDataEncoder.o SoundCardController.o SoundCardReaderWriter.o SplitController.o TCPReaderWriter.o \
+	  SlowDataDecoder.o SlowDataEncoder.o SoundCardController.o SoundCardReaderWriter.o SX1255Controller.o SplitController.o TCPReaderWriter.o \
 	  MQTTConnection.o Timer.o UDPReaderWriter.o UDRCController.o URIUSBController.o Utils.o
 
 .PHONY: all clean

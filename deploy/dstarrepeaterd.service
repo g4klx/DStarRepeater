@@ -1,0 +1,30 @@
+[Unit]
+Description=D-STAR Repeater Daemon (SX1255)
+After=network.target sound.target
+Wants=sound.target
+
+[Service]
+Type=simple
+User=dstarrepeater
+Group=dstarrepeater
+# ALSA, SPI and GPIO access without running as root.
+SupplementaryGroups=audio spi gpio
+
+# The daemon writes its lock file to $DSTAR_RUN_DIR, so point it at a
+# directory that systemd creates and owns for this service.
+RuntimeDirectory=dstarrepeater
+RuntimeDirectoryMode=0750
+Environment=DSTAR_RUN_DIR=/run/dstarrepeater
+
+ExecStart=/usr/bin/dstarrepeaterd /etc/dstarrepeater/dstarrepeater.ini
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+KillSignal=SIGTERM
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dstarrepeaterd
+
+[Install]
+WantedBy=multi-user.target

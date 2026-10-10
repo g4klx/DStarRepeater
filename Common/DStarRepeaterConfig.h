@@ -123,6 +123,9 @@ public:
 	// [Icom]
 	void getIcom(std::string& port) const;
 
+	// [SX1255]
+	void getSX1255(std::string& rxDevice, std::string& txDevice, std::string& spiDevice, unsigned int& rxFrequency, unsigned int& txFrequency, float& rxShiftHz, float& txDeviationHz, bool& rxInvert, bool& txInvert, float& rxLevel, float& txLevel, unsigned int& txDelay, unsigned int& txTail, unsigned int& spiSpeed, int& resetGpio, std::string& resetChip, unsigned int& resetLine, std::string& pttChip, unsigned int& pttLine, bool& pttInvert) const;
+
 #if defined(MQTT)
 	// [MQTT]
 	void getMQTT(std::string& host, unsigned int& port, bool& auth, std::string& username, std::string& password, unsigned int& keepalive, std::string& name) const;
@@ -299,6 +302,28 @@ private:
 
 	// [Icom]
 	std::string   m_icomPort;
+
+	// [SX1255]
+	std::string   m_sx1255RXDevice;
+	std::string   m_sx1255TXDevice;
+	std::string   m_sx1255SPIDevice;
+	unsigned int  m_sx1255RXFrequency;
+	unsigned int  m_sx1255TXFrequency;
+	float         m_sx1255RXShift;
+	float         m_sx1255TXDeviation;
+	bool          m_sx1255RXInvert;
+	bool          m_sx1255TXInvert;
+	float         m_sx1255RXLevel;
+	float         m_sx1255TXLevel;
+	unsigned int  m_sx1255TXDelay;
+	unsigned int  m_sx1255TXTail;
+	unsigned int  m_sx1255SPISpeed;
+	int           m_sx1255ResetGpio;
+	std::string   m_sx1255ResetChip;
+	unsigned int  m_sx1255ResetLine;
+	std::string   m_sx1255PTTChip;
+	unsigned int  m_sx1255PTTLine;
+	bool          m_sx1255PTTInvert;
 
 #if defined(MQTT)
 	// [MQTT]
