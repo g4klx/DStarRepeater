@@ -46,6 +46,7 @@
 #include "SerialLineController.h"
 #include "DStarRepeaterThread.h"
 #include "SoundCardController.h"
+#include "SX1255Controller.h"
 #include "DVRPTRV1Controller.h"
 #include "DVRPTRV2Controller.h"
 #include "DVRPTRV3Controller.h"
@@ -294,6 +295,24 @@ IDStarRepeaterThread* createThread(CDStarRepeaterConfig* config,
 			rxDevice.c_str(), txDevice.c_str(), int(rxInvert), int(txInvert), rxLevel, txLevel, txDelay, txTail);
 		modem = new CSoundCardController(rxDevice, txDevice, rxInvert, txInvert, rxLevel, txLevel, txDelay, txTail);
 
+	} else if (modemType == "SX1255") {
+		std::string  rxDevice, txDevice, spiDevice;
+		unsigned int rxFrequency, txFrequency;
+		float        rxShift, txDeviation;
+		bool         rxInvert, txInvert;
+		float        rxLevel, txLevel;
+		unsigned int txDelay, txTail, spiSpeed;
+		int          resetGpio;
+		std::string  resetChip;
+		unsigned int resetLine;
+		std::string  pttChip;
+		unsigned int pttLine;
+		bool         pttInvert;
+		config->getSX1255(rxDevice, txDevice, spiDevice, rxFrequency, txFrequency, rxShift, txDeviation, rxInvert, txInvert, rxLevel, txLevel, txDelay, txTail, spiSpeed, resetGpio, resetChip, resetLine, pttChip, pttLine, pttInvert);
+		wxLogInfo("SX1255, devices: %s:%s, spi: %s, RX freq: %u Hz, TX freq: %u Hz, RX shift: %.1f Hz, TX deviation: %.1f Hz, invert: %d:%d, levels: %.2f:%.2f, tx delay: %u ms, tx tail: %u ms, spi speed: %u Hz, reset: %s line %u (legacy GPIO %d), PTT: %s line %u (invert %d)",
+			rxDevice.c_str(), txDevice.c_str(), spiDevice.c_str(), rxFrequency, txFrequency, rxShift, txDeviation, int(rxInvert), int(txInvert), rxLevel, txLevel, txDelay, txTail, spiSpeed, resetChip.empty() ? "none" : resetChip.c_str(), resetLine, resetGpio, pttChip.empty() ? "none" : pttChip.c_str(), pttLine, int(pttInvert));
+		modem = new CSX1255Controller(rxDevice, txDevice, spiDevice, rxFrequency, txFrequency, rxShift, txDeviation, rxInvert, txInvert, rxLevel, txLevel, txDelay, txTail, spiSpeed, resetGpio, resetChip, resetLine, pttChip, pttLine, pttInvert);
+
 	} else if (modemType == "MMDVM") {
 		std::string  port;
 		bool         rxInvert, txInvert, pttInvert;
@@ -397,7 +416,13 @@ IDStarRepeaterThread* createThread(CDStarRepeaterConfig* config,
 		}
 #endif
 	} else {
-		wxLogError("Unrecognized controller %s, using dummy controller", controllerType.c_str());
+		// An empty controller type is the normal case for modem types that
+		// key their own transmitter (SX1255, GMSK modem, ...): no external
+		// PTT line is needed.
+		if (controllerType.empty())
+			wxLogInfo("No external controller configured, using internal modem PTT");
+		else
+			wxLogError("Unrecognized controller %s, using dummy controller", controllerType.c_str());
 		controller = new CExternalController(new CDummyController, pttInvert);
 	}
 
@@ -587,7 +612,14 @@ int main(int argc, char** argv)
 		return 1;
 	}
 #else
-	std::string pidPath = "/var/run/" + pidName + ".pid";
+	// Allow non-root installs (e.g. systemd RuntimeDirectory) to place the
+	// lock file somewhere writable.  Falls back to the legacy location.
+	std::string pidPath;
+	const char* runDir = std::getenv("DSTAR_RUN_DIR");
+	if (runDir != nullptr && runDir[0] != '\0')
+		pidPath = std::string(runDir) + "/" + pidName + ".pid";
+	else
+		pidPath = "/var/run/" + pidName + ".pid";
 #ifdef O_NOFOLLOW
 	int pidFd = open(pidPath.c_str(), O_RDWR | O_CREAT | O_NOFOLLOW, 0600);
 #else

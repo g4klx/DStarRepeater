@@ -34,7 +34,7 @@ Name=
 
 [Modem]
 # Type: DVAP, GMSK Modem, DV-RPTR V1, DV-RPTR V2, DV-RPTR V3, DVMEGA, MMDVM,
-#       Sound Card, Split, Icom Access Point/Terminal Mode
+#       Sound Card, SX1255, Split, Icom Access Point/Terminal Mode
 Type=DVAP
 
 [Times]
@@ -208,6 +208,41 @@ Timeout=0
 
 [Icom]
 Port=
+
+[SX1255]
+# ALSA I/Q devices exposed by the genericstereoaudiocodec overlay
+RXDevice=hw:GenericStereoAu,1,0
+TXDevice=hw:GenericStereoAu,0,0
+SPIDevice=/dev/spidev0.0
+# SPI clock speed in Hz
+SPISpeed=500000
+# Reset pin through libgpiod (preferred).  ResetChip is a /dev/gpiochipN path
+# and ResetLine is the line offset within that chip.
+# On Raspberry Pi 5 the user GPIOs are on pinctrl-rp1, typically /dev/gpiochip4.
+# On Raspberry Pi Zero 2 they are on the BCM chip, typically /dev/gpiochip0.
+#ResetChip=/dev/gpiochip4
+#ResetLine=25
+# Legacy fallback: global sysfs GPIO number (0 disables the sysfs reset).
+# This number is board-specific (537 is the Pi Zero 2 BCM GPIO_25).
+ResetGPIO=0
+# Optional PA PTT output driven by TX activity (leave PTTChip empty to disable).
+#PTTChip=/dev/gpiochip0
+#PTTLine=17
+#PTTInvert=0
+# Frequencies in Hz (410-510 MHz range)
+RXFrequency=430975020
+TXFrequency=438575000
+# Software frequency shift applied to the RX I/Q stream in Hz.
+# The RX synthesiser is tuned RXFrequency+RXShift to avoid the LO DC spike.
+RXShift=-25000
+# Peak GMSK FM deviation in Hz (D-Star h=0.5 at 4800 baud => 1200 Hz)
+TXDeviation=1200
+RXInvert=0
+TXInvert=0
+RXLevel=1.0
+TXLevel=1.0
+TXDelay=150
+TXTail=50
 
 [MQTT]
 Host=127.0.0.1

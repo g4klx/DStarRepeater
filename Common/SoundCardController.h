@@ -89,7 +89,7 @@ public:
 	virtual void readCallback(const float* input, unsigned int n, int id);
 	virtual void writeCallback(float* output, int& n, int id);
 
-private:
+protected:
 	void entry();
 
 	CSoundCardReaderWriter     m_sound;

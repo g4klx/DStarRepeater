@@ -67,6 +67,7 @@ static const std::string SECTION_MMDVM        = "MMDVM";
 static const std::string SECTION_SOUNDCARD    = "Sound Card";
 static const std::string SECTION_SPLIT        = "Split";
 static const std::string SECTION_ICOM         = "Icom";
+static const std::string SECTION_SX1255       = "SX1255";
 #if defined(MQTT)
 static const std::string SECTION_MQTT         = "MQTT";
 #endif
@@ -219,6 +220,28 @@ static const unsigned int    DEFAULT_SPLIT_TIMEOUT      = 0U;
 // [Icom]
 static const std::string     DEFAULT_ICOM_PORT          = std::string();
 
+// [SX1255]
+static const std::string     DEFAULT_SX1255_RXDEVICE    = "hw:GenericStereoAu,1,0";
+static const std::string     DEFAULT_SX1255_TXDEVICE    = "hw:GenericStereoAu,0,0";
+static const std::string     DEFAULT_SX1255_SPIDEVICE   = "/dev/spidev0.0";
+static const unsigned int    DEFAULT_SX1255_RXFREQUENCY = 430975020U;
+static const unsigned int    DEFAULT_SX1255_TXFREQUENCY = 438575000U;
+static const float           DEFAULT_SX1255_RXSHIFT     = -25000.0F;
+static const float           DEFAULT_SX1255_TXDEVIATION = 1200.0F;
+static const bool            DEFAULT_SX1255_RXINVERT    = false;
+static const bool            DEFAULT_SX1255_TXINVERT    = false;
+static const float           DEFAULT_SX1255_RXLEVEL     = 1.0F;
+static const float           DEFAULT_SX1255_TXLEVEL     = 1.0F;
+static const unsigned int    DEFAULT_SX1255_TXDELAY     = 150U;
+static const unsigned int    DEFAULT_SX1255_TXTAIL      = 50U;
+static const unsigned int    DEFAULT_SX1255_SPISPEED    = 500000U;
+static const int             DEFAULT_SX1255_RESETGPIO   = 0;
+static const std::string     DEFAULT_SX1255_RESETCHIP   = std::string();
+static const unsigned int    DEFAULT_SX1255_RESETLINE   = 25U;
+static const std::string     DEFAULT_SX1255_PTTCHIP     = std::string();
+static const unsigned int    DEFAULT_SX1255_PTTLINE     = 17U;
+static const bool            DEFAULT_SX1255_PTTINVERT   = false;
+
 #if defined(MQTT)
 // [MQTT]
 static const std::string     DEFAULT_MQTT_HOST          = "127.0.0.1";
@@ -359,7 +382,27 @@ m_splitLocalPort(DEFAULT_SPLIT_LOCALPORT),
 m_splitTXNames(),
 m_splitRXNames(),
 m_splitTimeout(DEFAULT_SPLIT_TIMEOUT),
-m_icomPort(DEFAULT_ICOM_PORT)
+m_icomPort(DEFAULT_ICOM_PORT),
+m_sx1255RXDevice(DEFAULT_SX1255_RXDEVICE),
+m_sx1255TXDevice(DEFAULT_SX1255_TXDEVICE),
+m_sx1255SPIDevice(DEFAULT_SX1255_SPIDEVICE),
+m_sx1255RXFrequency(DEFAULT_SX1255_RXFREQUENCY),
+m_sx1255TXFrequency(DEFAULT_SX1255_TXFREQUENCY),
+m_sx1255RXShift(DEFAULT_SX1255_RXSHIFT),
+m_sx1255TXDeviation(DEFAULT_SX1255_TXDEVIATION),
+m_sx1255RXInvert(DEFAULT_SX1255_RXINVERT),
+m_sx1255TXInvert(DEFAULT_SX1255_TXINVERT),
+m_sx1255RXLevel(DEFAULT_SX1255_RXLEVEL),
+m_sx1255TXLevel(DEFAULT_SX1255_TXLEVEL),
+m_sx1255TXDelay(DEFAULT_SX1255_TXDELAY),
+m_sx1255TXTail(DEFAULT_SX1255_TXTAIL),
+m_sx1255SPISpeed(DEFAULT_SX1255_SPISPEED),
+m_sx1255ResetGpio(DEFAULT_SX1255_RESETGPIO),
+m_sx1255ResetChip(DEFAULT_SX1255_RESETCHIP),
+m_sx1255ResetLine(DEFAULT_SX1255_RESETLINE),
+m_sx1255PTTChip(DEFAULT_SX1255_PTTCHIP),
+m_sx1255PTTLine(DEFAULT_SX1255_PTTLINE),
+m_sx1255PTTInvert(DEFAULT_SX1255_PTTINVERT)
 #if defined(MQTT)
 ,m_mqttHost(DEFAULT_MQTT_HOST)
 ,m_mqttPort(DEFAULT_MQTT_PORT)
@@ -786,6 +829,51 @@ m_icomPort(DEFAULT_ICOM_PORT)
 			if (key == "Port")
 				m_icomPort = val;
 
+		// ---------------------------------------------------------------------------
+		// [SX1255]
+		// ---------------------------------------------------------------------------
+		} else if (section == SECTION_SX1255) {
+			if (key == "RXDevice")
+				m_sx1255RXDevice = val;
+			else if (key == "TXDevice")
+				m_sx1255TXDevice = val;
+			else if (key == "SPIDevice")
+				m_sx1255SPIDevice = val;
+			else if (key == "RXFrequency")
+				m_sx1255RXFrequency = (unsigned int)std::stoul(val);
+			else if (key == "TXFrequency")
+				m_sx1255TXFrequency = (unsigned int)std::stoul(val);
+			else if (key == "RXShift")
+				m_sx1255RXShift = float(std::stod(val));
+			else if (key == "TXDeviation")
+				m_sx1255TXDeviation = float(std::stod(val));
+			else if (key == "RXInvert")
+				m_sx1255RXInvert = std::stol(val) == 1L;
+			else if (key == "TXInvert")
+				m_sx1255TXInvert = std::stol(val) == 1L;
+			else if (key == "RXLevel")
+				m_sx1255RXLevel = float(std::stod(val));
+			else if (key == "TXLevel")
+				m_sx1255TXLevel = float(std::stod(val));
+			else if (key == "TXDelay")
+				m_sx1255TXDelay = (unsigned int)std::stoul(val);
+			else if (key == "TXTail")
+				m_sx1255TXTail = (unsigned int)std::stoul(val);
+			else if (key == "SPISpeed")
+				m_sx1255SPISpeed = (unsigned int)std::stoul(val);
+			else if (key == "ResetGPIO")
+				m_sx1255ResetGpio = int(std::stol(val));
+			else if (key == "ResetChip")
+				m_sx1255ResetChip = val;
+			else if (key == "ResetLine")
+				m_sx1255ResetLine = (unsigned int)std::stoul(val);
+			else if (key == "PTTChip")
+				m_sx1255PTTChip = val;
+			else if (key == "PTTLine")
+				m_sx1255PTTLine = (unsigned int)std::stoul(val);
+			else if (key == "PTTInvert")
+				m_sx1255PTTInvert = std::stol(val) == 1L;
+
 #if defined(MQTT)
 		// ---------------------------------------------------------------------------
 		// [MQTT]
@@ -1050,6 +1138,30 @@ void CDStarRepeaterConfig::getSplit(std::string& localAddress, unsigned int& loc
 void CDStarRepeaterConfig::getIcom(std::string& port) const
 {
 	port = m_icomPort;
+}
+
+void CDStarRepeaterConfig::getSX1255(std::string& rxDevice, std::string& txDevice, std::string& spiDevice, unsigned int& rxFrequency, unsigned int& txFrequency, float& rxShiftHz, float& txDeviationHz, bool& rxInvert, bool& txInvert, float& rxLevel, float& txLevel, unsigned int& txDelay, unsigned int& txTail, unsigned int& spiSpeed, int& resetGpio, std::string& resetChip, unsigned int& resetLine, std::string& pttChip, unsigned int& pttLine, bool& pttInvert) const
+{
+	rxDevice     = m_sx1255RXDevice;
+	txDevice     = m_sx1255TXDevice;
+	spiDevice    = m_sx1255SPIDevice;
+	rxFrequency  = m_sx1255RXFrequency;
+	txFrequency  = m_sx1255TXFrequency;
+	rxShiftHz    = m_sx1255RXShift;
+	txDeviationHz = m_sx1255TXDeviation;
+	rxInvert     = m_sx1255RXInvert;
+	txInvert     = m_sx1255TXInvert;
+	rxLevel      = m_sx1255RXLevel;
+	txLevel      = m_sx1255TXLevel;
+	txDelay      = m_sx1255TXDelay;
+	txTail       = m_sx1255TXTail;
+	spiSpeed     = m_sx1255SPISpeed;
+	resetGpio    = m_sx1255ResetGpio;
+	resetChip    = m_sx1255ResetChip;
+	resetLine    = m_sx1255ResetLine;
+	pttChip      = m_sx1255PTTChip;
+	pttLine      = m_sx1255PTTLine;
+	pttInvert    = m_sx1255PTTInvert;
 }
 
 #if defined(MQTT)
