@@ -237,8 +237,10 @@ TXFrequency=438575000
 RXShift=-25000
 # Peak GMSK FM deviation in Hz (D-Star h=0.5 at 4800 baud => 1200 Hz)
 TXDeviation=1200
-RXInvert=0
-TXInvert=0
+# SX1255 HAT polarity measured with an Icom ID-52E:
+# both RX and TX need inversion on this hardware.
+RXInvert=1
+TXInvert=1
 RXLevel=1.0
 TXLevel=1.0
 TXDelay=150
