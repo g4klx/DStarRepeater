@@ -187,7 +187,7 @@ When built with `make MQTT=1`, the daemon can publish live telemetry to an MQTT 
 
 - **Log messages** — timestamped log output
 - **Repeater status** — JSON state updates (1/sec)
-- **D-Star events** — start/end/lost/BER/text in Display-Driver-compatible JSON
+- **D-Star events** — start/end/lost/BER as MMDVM-Host publishes them, so MMDVM-Display shows them
 
 See [MQTT.md](MQTT.md) for full details on configuration, topic structure, and JSON format.
 

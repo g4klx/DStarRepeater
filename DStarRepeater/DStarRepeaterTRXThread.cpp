@@ -296,14 +296,19 @@ void CDStarRepeaterTRXThread::entry()
 			// Publish status to MQTT every second
 			if (m_mqttStatusTimer.hasExpired()) {
 				if (g_mqtt != nullptr) {
+					// BER over the last second, as MMDVM-Host publishes it: read
+					// before getStatus() moves the baseline on
+					unsigned int berBits   = m_ambeBits - m_lastAMBEBits;
+					unsigned int berErrors = m_ambeErrors - m_lastAMBEErrors;
+
 					CDStarRepeaterStatusData* status = getStatus();
 					std::string json = status->toJSON();
 					g_mqtt->publish("status", json.c_str());
 					delete status;
 
-					// Publish BER and RSSI for Display-Driver during active RF
-					if (m_rptState == DSRS_VALID && m_ambeBits > 0U) {
-						float ber = float(m_ambeErrors * 100U) / float(m_ambeBits);
+					// Publish BER and RSSI for displays during active RF
+					if (m_rptState == DSRS_VALID && berBits > 0U) {
+						float ber = float(berErrors * 100U) / float(berBits);
 						mqttPublishBER(ber);
 					}
 
@@ -346,6 +351,9 @@ void CDStarRepeaterTRXThread::entry()
 						m_networkQueue[i]->reset();
 					m_controller->setActive(false);
 					m_controller->setRadioTransmit(false);
+#if defined(MQTT)
+					mqttCallLost();
+#endif
 					m_rptState = DSRS_SHUTDOWN;
 				}
 			} else {
@@ -672,8 +680,14 @@ void CDStarRepeaterTRXThread::receiveModem()
 					processRadioFrame(data, FRAME_END);
 					setRadioState(DSRXS_LISTENING);
 #if defined(MQTT)
-					mqttPublishDStarEnd();
-					mqttPublishIdle();
+					{
+						float duration = float(m_ambeFrames) / 50.0F;
+						float ber = m_ambeBits > 0U ? float(m_ambeErrors * 100U) / float(m_ambeBits) : 0.0F;
+						if (type == DSMTT_LOST)
+							mqttPublishDStarLostRF(duration, ber);
+						else
+							mqttPublishDStarEndRF(duration, ber);
+					}
 #endif
 					endOfRadioData();
 				}
@@ -1207,8 +1221,11 @@ void CDStarRepeaterTRXThread::repeaterStateMachine()
 				// Send end of transmission data to the radio
 				m_networkQueue[m_writeNum]->addData(END_PATTERN_BYTES, DV_FRAME_LENGTH_BYTES, true);
 #if defined(MQTT)
-				mqttPublishDStarLost();
-				mqttPublishIdle();
+				{
+					float duration = float(m_packetCount) / 50.0F;
+					float loss = m_packetCount > 0U ? float(m_packetSilence * 100U) / float(m_packetCount) : 0.0F;
+					mqttPublishDStarLostNet(duration, loss);
+				}
 #endif
 				endOfNetworkData();
 			}
@@ -1291,6 +1308,9 @@ bool CDStarRepeaterTRXThread::setRepeaterState(DSTAR_RPT_STATE state)
 			m_announcementTimer.stop();
 			m_controller->setActive(false);
 			m_controller->setRadioTransmit(false);
+#if defined(MQTT)
+			mqttCallLost();
+#endif
 			m_rptState = DSRS_SHUTDOWN;
 			break;
 
@@ -1518,7 +1538,7 @@ bool CDStarRepeaterTRXThread::processRadioHeader(CHeaderData* header)
 
 #if defined(MQTT)
 		mqttPublishDStarStart(m_rxHeader->getMyCall1(), m_rxHeader->getMyCall2(),
-			m_rxHeader->getYourCall(), m_rxHeader->getRptCall2(), "rf");
+			m_rxHeader->getYourCall(), MQTT_CALL::RF);
 #endif
 
 		if (m_logging != nullptr)
@@ -1584,7 +1604,7 @@ void CDStarRepeaterTRXThread::processNetworkHeader(CHeaderData* header)
 
 #if defined(MQTT)
 	mqttPublishDStarStart(m_rxHeader->getMyCall1(), m_rxHeader->getMyCall2(),
-		m_rxHeader->getYourCall(), m_rxHeader->getRptCall2(), "net");
+		m_rxHeader->getYourCall(), MQTT_CALL::NETWORK);
 #endif
 
 	if (m_mode == MODE_GATEWAY) {
@@ -1710,8 +1730,11 @@ unsigned int CDStarRepeaterTRXThread::processNetworkFrame(unsigned char* data, u
 	if (end) {
 		m_networkQueue[m_writeNum]->addData(END_PATTERN_BYTES, DV_FRAME_LENGTH_BYTES, true);
 #if defined(MQTT)
-		mqttPublishDStarEnd();
-		mqttPublishIdle();
+		{
+			float duration = float(m_packetCount) / 50.0F;
+			float loss = m_packetCount > 0U ? float(m_packetSilence * 100U) / float(m_packetCount) : 0.0F;
+			mqttPublishDStarEndNet(duration, loss);
+		}
 #endif
 		endOfNetworkData();
 		return 1U;
@@ -2252,3 +2275,17 @@ void CDStarRepeaterTRXThread::blankDTMF(unsigned char* data)
 		(data[8] & DTMF_MASK[8]) == DTMF_SIG[8])
 		::memcpy(data, NULL_AMBE_DATA_BYTES, VOICE_FRAME_LENGTH_BYTES);
 }
+
+#if defined(MQTT)
+// The repeater was shut down or disabled during a call: the display is
+// told the call was lost, as only the end of a call would otherwise
+// clear it. Nothing is published when no call is open.
+void CDStarRepeaterTRXThread::mqttCallLost()
+{
+	float ber = m_ambeBits > 0U ? float(m_ambeErrors * 100U) / float(m_ambeBits) : 0.0F;
+	mqttPublishDStarLostRF(float(m_ambeFrames) / 50.0F, ber);
+
+	float loss = m_packetCount > 0U ? float(m_packetSilence * 100U) / float(m_packetCount) : 0.0F;
+	mqttPublishDStarLostNet(float(m_packetCount) / 50.0F, loss);
+}
+#endif

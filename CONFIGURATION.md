@@ -364,4 +364,4 @@ With `Name=dstar-repeater`:
 |-------|---------|
 | `dstar-repeater/log` | Timestamped log messages (filtered by MQTTLevel). |
 | `dstar-repeater/status` | JSON repeater status (1/sec). |
-| `dstar-repeater/json` | Display-Driver-compatible D-Star events. |
+| `dstar-repeater/json` | D-Star events as MMDVM-Host publishes them (MMDVM-Display reads them as they are). |
