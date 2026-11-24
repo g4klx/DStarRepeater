@@ -132,8 +132,11 @@ void CDStarRepeaterTXThread::entry()
 					// Send end of transmission data to the radio
 					m_networkQueue[m_writeNum]->addData(END_PATTERN_BYTES, DV_FRAME_LENGTH_BYTES, true);
 #if defined(MQTT)
-					mqttPublishDStarLost();
-					mqttPublishIdle();
+					{
+						float duration = float(m_packetCount) / 50.0F;
+						float loss = m_packetCount > 0U ? float(m_packetSilence * 100U) / float(m_packetCount) : 0.0F;
+						mqttPublishDStarLostNet(duration, loss);
+					}
 #endif
 					endOfNetworkData();
 				}
@@ -411,7 +414,7 @@ void CDStarRepeaterTXThread::processNetworkHeader(CHeaderData* header)
 
 #if defined(MQTT)
 	mqttPublishDStarStart(m_txHeader->getMyCall1(), m_txHeader->getMyCall2(),
-		m_txHeader->getYourCall(), m_txHeader->getRptCall2(), "net");
+		m_txHeader->getYourCall(), MQTT_CALL::NETWORK);
 #endif
 
 	transmitNetworkHeader(new CHeaderData(*header));
@@ -426,8 +429,11 @@ unsigned int CDStarRepeaterTXThread::processNetworkFrame(unsigned char* data, un
 	if (end) {
 		m_networkQueue[m_writeNum]->addData(END_PATTERN_BYTES, DV_FRAME_LENGTH_BYTES, true);
 #if defined(MQTT)
-		mqttPublishDStarEnd();
-		mqttPublishIdle();
+		{
+			float duration = float(m_packetCount) / 50.0F;
+			float loss = m_packetCount > 0U ? float(m_packetSilence * 100U) / float(m_packetCount) : 0.0F;
+			mqttPublishDStarEndNet(duration, loss);
+		}
 #endif
 		endOfNetworkData();
 		return 1U;

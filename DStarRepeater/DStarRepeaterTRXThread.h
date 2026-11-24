@@ -213,6 +213,8 @@ private:
 
 #if defined(MQTT)
 	CTimer                     m_mqttStatusTimer;   // 1 s timer driving MQTT status/BER publication
+
+	void mqttCallLost();
 #endif
 
 	void receiveHeader(CHeaderData* header);

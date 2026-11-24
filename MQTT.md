@@ -170,53 +170,72 @@ A JSON object published once per second with the current repeater state:
 
 ### `dstar-repeater/json`
 
-Event-driven JSON messages published at D-Star state transitions, in the
-format expected by [Display-Driver](https://github.com/MW0MWZ/Display-Driver).
-This means DStarRepeater can drive an OLED/TFT display via MQTT with no
-modifications to Display-Driver.
+Event-driven JSON messages published at D-Star state transitions. They are
+the messages MMDVM-Host publishes for D-Star (same keys, values and
+timestamps), so [MMDVM-Display](https://github.com/g4klx/MMDVM-Display) and
+anything else written for MMDVM-Host shows DStarRepeater's traffic with no
+changes: set its host MQTT name to `dstar-repeater`.
 
-**RF transmission starts:**
+**Mode change, before each transmission starts:**
 ```json
-{"D-Star":{"action":"start","source_cs":"MW0MWZ  ","source_ext":"    ","destination_cs":"CQCQCQ  ","reflector":"GB7XX  G","source":"rf"}}
+{"MMDVM":{"timestamp":"2026-11-24T15:34:41.085Z","mode":"D-Star"}}
 ```
 
-**Transmission ends normally:**
+**Transmission starts (`source` is `rf` or `network`):**
 ```json
-{"D-Star":{"action":"end"}}
+{"D-Star":{"timestamp":"2026-11-24T15:34:41.095Z","src_callsign":"MW0MWZ","src_ext":"","dst_callsign":"CQCQCQ","source":"rf","action":"start","reflector":""}}
 ```
 
-**Transmission lost (watchdog timeout):**
+Callsigns have their trailing padding removed (leading spaces stay:
+`"       E"` for echo). `reflector` is always empty: MMDVM-Host reports the
+reflector its gateway is linked to, which the repeater does not know.
+
+**RF transmission ends normally (duration in seconds, BER in percent):**
 ```json
-{"D-Star":{"action":"lost"}}
+{"D-Star":{"timestamp":"2026-11-24T15:34:52.400Z","duration":11.3,"ber":0.4,"action":"end"}}
 ```
 
-**Return to idle:**
+**Network transmission ends normally (loss in percent):**
 ```json
-{"MMDVM":{"mode":"idle"}}
+{"D-Star":{"timestamp":"2026-11-24T15:34:52.400Z","duration":11.3,"loss":0.0,"action":"end"}}
 ```
 
-**BER update (once per second during active RF):**
+**RF transmission lost (the modem lost the signal):**
 ```json
-{"BER":{"mode":"D-Star","value":1.3}}
+{"D-Star":{"timestamp":"2026-11-24T15:34:52.400Z","duration":4.2,"ber":3.1,"action":"lost"}}
+```
+
+**Network transmission lost (watchdog timeout):**
+```json
+{"D-Star":{"timestamp":"2026-11-24T15:15:31.486Z","duration":3.0,"loss":66.4,"action":"lost"}}
+```
+
+A transmission open when the repeater is shut down or disabled is reported
+as lost. Every start is followed by exactly one end or lost for the same
+source: a radio header the repeater rejects (for example while a network
+transmission is being sent) publishes nothing.
+
+**Return to idle, after every end or lost:**
+```json
+{"MMDVM":{"timestamp":"2026-11-24T15:34:52.410Z","mode":"idle"}}
+```
+
+**BER update (once per second during active RF, over the last second):**
+```json
+{"BER":{"timestamp":"2026-11-24T15:34:44.000Z","mode":"D-Star","value":1.3}}
 ```
 
 **RSSI update (DVAP modem, once per second during active RF):**
 ```json
-{"RSSI":{"mode":"D-Star","value":-85}}
+{"RSSI":{"timestamp":"2026-11-24T15:34:44.000Z","mode":"D-Star","value":-85}}
 ```
 
-#### Display-Driver Compatibility
-
-These messages use the exact same JSON keys and structure that
-Display-Driver expects. Configure Display-Driver to subscribe to
-`dstar-repeater/json`.
-
-| Top-level key | Display-Driver parser | When published |
-|---------------|----------------------|----------------|
-| `D-Star` | `parseDStar()` | Transmission start, end, or lost |
-| `BER` | `parseBER()` | Once per second during active RF |
-| `RSSI`         | `parseRSSI()`        | Once per second during active RF (DVAP only) |
-| `MMDVM` | `parseMMDVM()` | On return to idle |
+| Top-level key | When published |
+|---------------|----------------|
+| `MMDVM` | Mode change: `D-Star` before each start, `idle` after each end/lost |
+| `D-Star` | Transmission start, end, or lost |
+| `BER` | Once per second during active RF |
+| `RSSI` | Once per second during active RF (DVAP only) |
 
 ## Subscribing to MQTT Output
 

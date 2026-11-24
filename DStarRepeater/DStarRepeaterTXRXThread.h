@@ -120,6 +120,8 @@ private:
 
 #if defined(MQTT)
 	CTimer                     m_mqttStatusTimer;
+
+	void mqttCallLost();
 #endif
 
 	void receiveHeader(CHeaderData* header);

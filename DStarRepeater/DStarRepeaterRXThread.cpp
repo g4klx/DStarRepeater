@@ -110,14 +110,19 @@ void CDStarRepeaterRXThread::entry()
 			// Publish status to MQTT every second
 			if (m_mqttStatusTimer.hasExpired()) {
 				if (g_mqtt != nullptr) {
+					// BER over the last second, as MMDVM-Host publishes it: read
+					// before getStatus() moves the baseline on
+					unsigned int berBits   = m_ambeBits - m_lastAMBEBits;
+					unsigned int berErrors = m_ambeErrors - m_lastAMBEErrors;
+
 					CDStarRepeaterStatusData* status = getStatus();
 					std::string json = status->toJSON();
 					g_mqtt->publish("status", json.c_str());
 					delete status;
 
-					// Publish BER for Display-Driver during active RF
-					if (m_rptState == DSRS_VALID && m_ambeBits > 0U) {
-						float ber = float(m_ambeErrors * 100U) / float(m_ambeBits);
+					// Publish BER for displays during active RF
+					if (m_rptState == DSRS_VALID && berBits > 0U) {
+						float ber = float(berErrors * 100U) / float(berBits);
 						mqttPublishBER(ber);
 					}
 				}
@@ -246,8 +251,14 @@ void CDStarRepeaterRXThread::receiveModem()
 					processRadioFrame(data, FRAME_END);
 					setRadioState(DSRXS_LISTENING);
 #if defined(MQTT)
-					mqttPublishDStarEnd();
-					mqttPublishIdle();
+					{
+						float duration = float(m_ambeFrames) / 50.0F;
+						float ber = m_ambeBits > 0U ? float(m_ambeErrors * 100U) / float(m_ambeBits) : 0.0F;
+						if (type == DSMTT_LOST)
+							mqttPublishDStarLostRF(duration, ber);
+						else
+							mqttPublishDStarEndRF(duration, ber);
+					}
 #endif
 					endOfRadioData();
 				}
@@ -387,7 +398,7 @@ bool CDStarRepeaterRXThread::processRadioHeader(CHeaderData* header)
 
 #if defined(MQTT)
 	mqttPublishDStarStart(m_rxHeader->getMyCall1(), m_rxHeader->getMyCall2(),
-		m_rxHeader->getYourCall(), m_rxHeader->getRptCall2(), "rf");
+		m_rxHeader->getYourCall(), MQTT_CALL::RF);
 #endif
 
 	CHeaderData netHeader(*m_rxHeader);
